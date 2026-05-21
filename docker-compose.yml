@@ -1,0 +1,88 @@
+version: '3.8'
+
+services:
+  # Database
+  postgres-db:
+    image: postgres:15-alpine
+    container_name: telecrypt-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USER:-telecrypt}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-telecrypt_secure_pass_135}
+      POSTGRES_DB: ${DB_NAME:-telecrypt_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Message Queue & Cache
+  redis-server:
+    image: redis:7-alpine
+    container_name: telecrypt-redis
+    restart: always
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis_secure_pass_246}
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis_secure_pass_246}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Worker Service (Binance Connection & Calculations)
+  binance-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - APP_NAME=binance-worker
+    container_name: telecrypt-binance-worker
+    restart: always
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${DB_USER:-telecrypt}:${DB_PASSWORD:-telecrypt_secure_pass_135}@postgres-db:5432/${DB_NAME:-telecrypt_db}?schema=public
+      REDIS_HOST: redis-server
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_secure_pass_246}
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+      redis-server:
+        condition: service_healthy
+
+  # Bot Service (Telegram Commands & Alerts Consumer)
+  telegram-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - APP_NAME=telegram-bot
+    container_name: telecrypt-telegram-bot
+    restart: always
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${DB_USER:-telecrypt}:${DB_PASSWORD:-telecrypt_secure_pass_135}@postgres-db:5432/${DB_NAME:-telecrypt_db}?schema=public
+      REDIS_HOST: redis-server
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_secure_pass_246}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+      redis-server:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local

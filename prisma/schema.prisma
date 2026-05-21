@@ -1,0 +1,76 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum AlertType {
+  PRICE_VOLATILITY
+  VOLUME_VOLATILITY
+  BOTH
+}
+
+enum Timeframe {
+  H1
+  H24
+}
+
+model User {
+  id          String        @id @default(uuid())
+  telegramId  String        @unique // Chat ID from Telegram
+  username    String?
+  firstName   String?
+  lastName    String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  
+  alertsConfig AlertsConfig?
+  alertLogs    AlertLog[]
+
+  @@index([telegramId])
+}
+
+model AlertsConfig {
+  id                 String   @id @default(uuid())
+  userId             String   @unique
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  priceThreshold1h   Float    @default(5.0)   // % threshold for 1 hour price change
+  priceThreshold24h  Float    @default(15.0)  // % threshold for 24 hour price change
+  volumeThreshold1h  Float    @default(100.0) // % threshold for 1 hour volume change (e.g. 100% = 2x volume)
+  volumeThreshold24h Float    @default(300.0) // % threshold for 24 hour volume change (e.g. 300% = 4x volume)
+  
+  isActive           Boolean  @default(true)
+  isMuted            Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([userId])
+  @@index([isActive])
+}
+
+model AlertLog {
+  id               String    @id @default(uuid())
+  userId           String
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  symbol           String    // e.g., "BTCUSDT"
+  alertType        AlertType
+  timeframe        Timeframe
+  oldValue         Float     // Previous value (price or volume)
+  newValue         Float     // Trigger value
+  percentageChange Float     // The percentage change calculated
+  createdAt        DateTime  @default(now())
+
+  // Optimized compound index for querying user alert history ordered by newest first
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([symbol])
+}
