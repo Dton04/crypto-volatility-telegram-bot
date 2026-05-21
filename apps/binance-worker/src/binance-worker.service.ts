@@ -128,7 +128,7 @@ export class BinanceWorkerService implements OnModuleInit, OnModuleDestroy {
 
     const wsSubject$ = webSocket<BinanceMiniTicker[]>({
       url: this.wsUrl,
-      WebSocketCtor: ws as unknown as new (
+      WebSocketCtor: ws.WebSocket as unknown as new (
         url: string,
         protocols?: string | string[],
       ) => WebSocket,
@@ -140,8 +140,9 @@ export class BinanceWorkerService implements OnModuleInit, OnModuleDestroy {
         retry({
           delay: (error, retryCount) => {
             const delayTime = Math.min(1000 * Math.pow(2, retryCount), 30000);
+            const errMsg = error instanceof Error ? error.message : JSON.stringify(error);
             this.logger.warn(
-              `Binance WS disconnected. Reconnecting in ${delayTime}ms... (Attempt ${retryCount})`,
+              `Binance WS disconnected (${errMsg}). Reconnecting in ${delayTime}ms... (Attempt ${retryCount})`,
             );
             return timer(delayTime);
           },

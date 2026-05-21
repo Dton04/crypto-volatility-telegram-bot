@@ -23,6 +23,9 @@ import { AlertsConsumer } from './alerts.consumer';
       }),
       inject: [ConfigService],
     }),
+    BullModule.registerQueue({
+      name: 'telegram-alerts',
+    }),
   ],
   controllers: [TelegramBotController],
   providers: [TelegramBotService, AlertsConsumer],
