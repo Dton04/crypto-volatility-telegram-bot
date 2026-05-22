@@ -61,7 +61,7 @@ export class BinanceWorkerService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly databaseService: DatabaseService,
     @InjectQueue('telegram-alerts') private readonly alertsQueue: Queue,
-  ) {}
+  ) { }
 
   async onModuleInit() {
     this.logger.log('Initializing Binance Worker Service...');
