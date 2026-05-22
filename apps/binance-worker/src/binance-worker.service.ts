@@ -140,7 +140,8 @@ export class BinanceWorkerService implements OnModuleInit, OnModuleDestroy {
         retry({
           delay: (error, retryCount) => {
             const delayTime = Math.min(1000 * Math.pow(2, retryCount), 30000);
-            const errMsg = error instanceof Error ? error.message : JSON.stringify(error);
+            const errMsg =
+              error instanceof Error ? error.message : JSON.stringify(error);
             this.logger.warn(
               `Binance WS disconnected (${errMsg}). Reconnecting in ${delayTime}ms... (Attempt ${retryCount})`,
             );

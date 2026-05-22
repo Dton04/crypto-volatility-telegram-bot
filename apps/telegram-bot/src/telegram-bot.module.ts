@@ -25,6 +25,10 @@ import { AlertsConsumer } from './alerts.consumer';
     }),
     BullModule.registerQueue({
       name: 'telegram-alerts',
+      defaultJobOptions: {
+        removeOnComplete: true,
+        removeOnFail: { count: 50 },
+      },
     }),
   ],
   controllers: [TelegramBotController],

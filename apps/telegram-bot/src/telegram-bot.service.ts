@@ -172,56 +172,150 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
             reply_markup: keyboard.reply_markup,
           });
         } else if (callbackData === 'menu_price') {
-          // Show Price options
+          // Show Price options menu (Timeframe selection)
           const keyboard = Markup.inlineKeyboard([
             [
-              Markup.button.callback('2%', 'set_price:2'),
-              Markup.button.callback('5%', 'set_price:5'),
-            ],
-            [
-              Markup.button.callback('10%', 'set_price:10'),
-              Markup.button.callback('15%', 'set_price:15'),
+              Markup.button.callback('1 Hour Price', 'menu_price_tf:1h'),
+              Markup.button.callback('24 Hours Price', 'menu_price_tf:24h'),
             ],
             [Markup.button.callback('⬅️ Back', 'back_to_settings')],
+          ]);
+          await ctx.editMessageText('📈 Select Price timeframe to configure:', {
+            reply_markup: keyboard.reply_markup,
+          });
+        } else if (callbackData === 'menu_vol') {
+          // Show Volume options menu (Timeframe selection)
+          const keyboard = Markup.inlineKeyboard([
+            [
+              Markup.button.callback('1 Hour Volume', 'menu_vol_tf:1h'),
+              Markup.button.callback('24 Hours Volume', 'menu_vol_tf:24h'),
+            ],
+            [Markup.button.callback('⬅️ Back', 'back_to_settings')],
+          ]);
+          await ctx.editMessageText(
+            '📊 Select Volume timeframe to configure:',
+            {
+              reply_markup: keyboard.reply_markup,
+            },
+          );
+        } else if (callbackData === 'menu_price_tf:1h') {
+          const keyboard = Markup.inlineKeyboard([
+            [
+              Markup.button.callback('1%', 'set_price:1h:1'),
+              Markup.button.callback('2%', 'set_price:1h:2'),
+              Markup.button.callback('5%', 'set_price:1h:5'),
+            ],
+            [
+              Markup.button.callback('10%', 'set_price:1h:10'),
+              Markup.button.callback('📴 Disable', 'set_price:1h:999999'),
+            ],
+            [Markup.button.callback('⬅️ Back', 'menu_price')],
           ]);
           await ctx.editMessageText('📈 Choose Price Change Threshold (1h):', {
             reply_markup: keyboard.reply_markup,
           });
-        } else if (callbackData === 'menu_vol') {
-          // Show Volume options
+        } else if (callbackData === 'menu_price_tf:24h') {
           const keyboard = Markup.inlineKeyboard([
             [
-              Markup.button.callback('50%', 'set_vol:50'),
-              Markup.button.callback('100%', 'set_vol:100'),
+              Markup.button.callback('5%', 'set_price:24h:5'),
+              Markup.button.callback('10%', 'set_price:24h:10'),
+              Markup.button.callback('15%', 'set_price:24h:15'),
             ],
             [
-              Markup.button.callback('200%', 'set_vol:200'),
-              Markup.button.callback('500%', 'set_vol:500'),
+              Markup.button.callback('25%', 'set_price:24h:25'),
+              Markup.button.callback('📴 Disable', 'set_price:24h:999999'),
             ],
-            [Markup.button.callback('⬅️ Back', 'back_to_settings')],
+            [Markup.button.callback('⬅️ Back', 'menu_price')],
+          ]);
+          await ctx.editMessageText('📈 Choose Price Change Threshold (24h):', {
+            reply_markup: keyboard.reply_markup,
+          });
+        } else if (callbackData === 'menu_vol_tf:1h') {
+          const keyboard = Markup.inlineKeyboard([
+            [
+              Markup.button.callback('50%', 'set_vol:1h:50'),
+              Markup.button.callback('100%', 'set_vol:1h:100'),
+              Markup.button.callback('200%', 'set_vol:1h:200'),
+            ],
+            [
+              Markup.button.callback('500%', 'set_vol:1h:500'),
+              Markup.button.callback('📴 Disable', 'set_vol:1h:999999'),
+            ],
+            [Markup.button.callback('⬅️ Back', 'menu_vol')],
           ]);
           await ctx.editMessageText('📊 Choose 1h Volume Increase Threshold:', {
             reply_markup: keyboard.reply_markup,
           });
-        } else if (callbackData.startsWith('set_price:')) {
-          const value = parseFloat(callbackData.split(':')[1]);
+        } else if (callbackData === 'menu_vol_tf:24h') {
+          const keyboard = Markup.inlineKeyboard([
+            [
+              Markup.button.callback('20%', 'set_vol:24h:20'),
+              Markup.button.callback('50%', 'set_vol:24h:50'),
+              Markup.button.callback('100%', 'set_vol:24h:100'),
+            ],
+            [
+              Markup.button.callback('200%', 'set_vol:24h:200'),
+              Markup.button.callback('📴 Disable', 'set_vol:24h:999999'),
+            ],
+            [Markup.button.callback('⬅️ Back', 'menu_vol')],
+          ]);
+          await ctx.editMessageText(
+            '📊 Choose 24h Volume Increase Threshold:',
+            {
+              reply_markup: keyboard.reply_markup,
+            },
+          );
+        } else if (callbackData.startsWith('set_price:1h:')) {
+          const value = parseFloat(callbackData.split(':')[2]);
           const updated = await this.databaseService.alertsConfig.update({
             where: { id: config.id },
             data: { priceThreshold1h: value },
           });
-          await ctx.answerCbQuery(`Price threshold set to ${value}%`);
+          await ctx.answerCbQuery(
+            `1h Price threshold set to ${value >= 999999 ? 'Disabled' : value + '%'}`,
+          );
           const { text, keyboard } = this.renderSettingsMenu(updated);
           await ctx.editMessageText(text, {
             parse_mode: 'Markdown',
             reply_markup: keyboard.reply_markup,
           });
-        } else if (callbackData.startsWith('set_vol:')) {
-          const value = parseFloat(callbackData.split(':')[1]);
+        } else if (callbackData.startsWith('set_price:24h:')) {
+          const value = parseFloat(callbackData.split(':')[2]);
+          const updated = await this.databaseService.alertsConfig.update({
+            where: { id: config.id },
+            data: { priceThreshold24h: value },
+          });
+          await ctx.answerCbQuery(
+            `24h Price threshold set to ${value >= 999999 ? 'Disabled' : value + '%'}`,
+          );
+          const { text, keyboard } = this.renderSettingsMenu(updated);
+          await ctx.editMessageText(text, {
+            parse_mode: 'Markdown',
+            reply_markup: keyboard.reply_markup,
+          });
+        } else if (callbackData.startsWith('set_vol:1h:')) {
+          const value = parseFloat(callbackData.split(':')[2]);
           const updated = await this.databaseService.alertsConfig.update({
             where: { id: config.id },
             data: { volumeThreshold1h: value },
           });
-          await ctx.answerCbQuery(`Volume threshold set to ${value}%`);
+          await ctx.answerCbQuery(
+            `1h Volume threshold set to ${value >= 999999 ? 'Disabled' : value + '%'}`,
+          );
+          const { text, keyboard } = this.renderSettingsMenu(updated);
+          await ctx.editMessageText(text, {
+            parse_mode: 'Markdown',
+            reply_markup: keyboard.reply_markup,
+          });
+        } else if (callbackData.startsWith('set_vol:24h:')) {
+          const value = parseFloat(callbackData.split(':')[2]);
+          const updated = await this.databaseService.alertsConfig.update({
+            where: { id: config.id },
+            data: { volumeThreshold24h: value },
+          });
+          await ctx.answerCbQuery(
+            `24h Volume threshold set to ${value >= 999999 ? 'Disabled' : value + '%'}`,
+          );
           const { text, keyboard } = this.renderSettingsMenu(updated);
           await ctx.editMessageText(text, {
             parse_mode: 'Markdown',
@@ -274,14 +368,18 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
     isActive: boolean;
     isMuted: boolean;
     priceThreshold1h: number;
+    priceThreshold24h: number;
     volumeThreshold1h: number;
+    volumeThreshold24h: number;
   }) {
+    const formatValue = (val: number) =>
+      val >= 999999 ? 'Disabled' : `${val}%`;
     const text =
       `⚙️ *Real-time Alert Settings*\n\n` +
       `• *Status*: ${config.isActive ? '🟢 Active' : '🔴 Inactive'}\n` +
       `• *Mute Mode*: ${config.isMuted ? '🔕 Muted' : '🔔 Unmuted'}\n` +
-      `• *Price Alert Threshold (1h)*: \`±${config.priceThreshold1h}%\`\n` +
-      `• *Volume Alert Threshold (1h)*: \`+${config.volumeThreshold1h}%\`\n\n` +
+      `• *Price Threshold*: 1h: \`±${formatValue(config.priceThreshold1h)}\` | 24h: \`±${formatValue(config.priceThreshold24h)}\`\n` +
+      `• *Volume Threshold*: 1h: \`+${formatValue(config.volumeThreshold1h)}\` | 24h: \`+${formatValue(config.volumeThreshold24h)}\`\n\n` +
       `Customize your alerts below:`;
 
     const keyboard = Markup.inlineKeyboard([

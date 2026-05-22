@@ -24,6 +24,10 @@ import { BinanceWorkerService } from './binance-worker.service';
     }),
     BullModule.registerQueue({
       name: 'telegram-alerts',
+      defaultJobOptions: {
+        removeOnComplete: true,
+        removeOnFail: { count: 50 },
+      },
     }),
   ],
   controllers: [BinanceWorkerController],
