@@ -14,13 +14,17 @@ import { AlertsConsumer } from './alerts.consumer';
     DatabaseModule,
     BullModule.forRootAsync({
       imports: [ConfigModule],
-      useFactory: (configService: ConfigService) => ({
-        connection: {
+      useFactory: (configService: ConfigService) => {
+        const password = configService.get<string>('REDIS_PASSWORD');
+        const connection: any = {
           host: configService.get<string>('REDIS_HOST', 'localhost'),
           port: configService.get<number>('REDIS_PORT', 6379),
-          password: configService.get<string>('REDIS_PASSWORD'),
-        },
-      }),
+        };
+        if (password && password.trim() !== '') {
+          connection.password = password;
+        }
+        return { connection };
+      },
       inject: [ConfigService],
     }),
     BullModule.registerQueue({
