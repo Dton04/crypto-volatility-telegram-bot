@@ -429,15 +429,34 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
           );
         } else if (callbackData === 'menu_ema_tf') {
           await ctx.answerCbQuery();
+          const selected = config.emaTimeframe
+            .split(',')
+            .map((s) => s.trim().toLowerCase())
+            .filter(Boolean);
+          const is1h = selected.includes('1h');
+          const is4h = selected.includes('4h');
+          const is1d = selected.includes('1d');
+
           const keyboard = Markup.inlineKeyboard([
             [
-              Markup.button.callback('1 Hour (1h)', 'tf_set_1h'),
-              Markup.button.callback('4 Hours (4h)', 'tf_set_4h'),
-              Markup.button.callback('1 Day (1d)', 'tf_set_1d'),
+              Markup.button.callback(
+                is1h ? '✅ 1 Hour (1h)' : '⬜️ 1 Hour (1h)',
+                'tf_toggle_1h',
+              ),
+              Markup.button.callback(
+                is4h ? '✅ 4 Hours (4h)' : '⬜️ 4 Hours (4h)',
+                'tf_toggle_4h',
+              ),
+            ],
+            [
+              Markup.button.callback(
+                is1d ? '✅ 1 Day (1d)' : '⬜️ 1 Day (1d)',
+                'tf_toggle_1d',
+              ),
             ],
             [Markup.button.callback('◀️ Back', 'back_to_settings')],
           ]);
-          await ctx.editMessageText('⏳ *Select EMA Scan Timeframe:*', {
+          await ctx.editMessageText('⏳ *Select EMA Scan Timeframe(s):*', {
             parse_mode: 'Markdown',
             reply_markup: keyboard.reply_markup,
           });
@@ -511,15 +530,64 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
             parse_mode: 'Markdown',
             reply_markup: keyboard.reply_markup,
           });
-        } else if (callbackData.startsWith('tf_set_')) {
-          const val = callbackData.replace('tf_set_', '');
-          const updated = await this.databaseService.alertsConfig.update({
+        } else if (callbackData.startsWith('tf_toggle_')) {
+          const tfToToggle = callbackData.replace('tf_toggle_', '');
+          let currentList = config.emaTimeframe
+            .split(',')
+            .map((s) => s.trim().toLowerCase())
+            .filter(Boolean);
+
+          if (currentList.includes(tfToToggle)) {
+            if (currentList.length <= 1) {
+              await ctx.answerCbQuery(
+                '⚠️ Bạn phải chọn ít nhất 1 khung thời gian!',
+              );
+              return;
+            }
+            currentList = currentList.filter((t) => t !== tfToToggle);
+          } else {
+            currentList.push(tfToToggle);
+          }
+
+          const orderedList: string[] = [];
+          if (currentList.includes('1h')) orderedList.push('1h');
+          if (currentList.includes('4h')) orderedList.push('4h');
+          if (currentList.includes('1d')) orderedList.push('1d');
+
+          const updatedVal = orderedList.join(',');
+
+          await this.databaseService.alertsConfig.update({
             where: { id: config.id },
-            data: { emaTimeframe: val },
+            data: { emaTimeframe: updatedVal },
           });
-          await ctx.answerCbQuery(`EMA Timeframe: ${val.toUpperCase()}`);
-          const { text, keyboard } = this.renderSettingsMenu(updated);
-          await ctx.editMessageText(text, {
+
+          await ctx.answerCbQuery(`Đã chọn: ${updatedVal.toUpperCase()}`);
+
+          const is1h = orderedList.includes('1h');
+          const is4h = orderedList.includes('4h');
+          const is1d = orderedList.includes('1d');
+
+          const keyboard = Markup.inlineKeyboard([
+            [
+              Markup.button.callback(
+                is1h ? '✅ 1 Hour (1h)' : '⬜️ 1 Hour (1h)',
+                'tf_toggle_1h',
+              ),
+              Markup.button.callback(
+                is4h ? '✅ 4 Hours (4h)' : '⬜️ 4 Hours (4h)',
+                'tf_toggle_4h',
+              ),
+            ],
+            [
+              Markup.button.callback(
+                is1d ? '✅ 1 Day (1d)' : '⬜️ 1 Day (1d)',
+                'tf_toggle_1d',
+              ),
+            ],
+            [Markup.button.callback('◀️ Back', 'back_to_settings')],
+          ]);
+
+          await ctx.editMessageText('⏳ *Select EMA Scan Timeframe(s):*', {
             parse_mode: 'Markdown',
             reply_markup: keyboard.reply_markup,
           });
@@ -638,7 +706,10 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
     const reversalStatusText = config.emaReversalFilter
       ? '🟢 Active'
       : '🔴 Inactive';
-    const tfText = (config.emaTimeframe || '4h').toUpperCase();
+    const tfText = (config.emaTimeframe || '4h')
+      .split(',')
+      .map((t) => t.trim().toUpperCase())
+      .join(', ');
 
     const text =
       `⚙️ *Real-time Alert Settings*\n\n` +

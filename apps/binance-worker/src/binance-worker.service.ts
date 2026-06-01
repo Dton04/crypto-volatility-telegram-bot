@@ -540,10 +540,15 @@ export class BinanceWorkerService implements OnModuleInit, OnModuleDestroy {
     const timeframesToScan = new Set<string>();
     for (const config of this.activeUserConfigs) {
       if (config.emaReversalFilter) {
-        const tf = config.emaTimeframe.toLowerCase();
-        if (tf === '1h') timeframesToScan.add('1h');
-        if (tf === '4h' && currentHour % 4 === 0) timeframesToScan.add('4h');
-        if (tf === '1d' && currentHour % 24 === 0) timeframesToScan.add('1d');
+        const tfList = config.emaTimeframe
+          .split(',')
+          .map((s) => s.trim().toLowerCase())
+          .filter(Boolean);
+        if (tfList.includes('1h')) timeframesToScan.add('1h');
+        if (tfList.includes('4h') && currentHour % 4 === 0)
+          timeframesToScan.add('4h');
+        if (tfList.includes('1d') && currentHour % 24 === 0)
+          timeframesToScan.add('1d');
       }
     }
 
@@ -591,10 +596,11 @@ export class BinanceWorkerService implements OnModuleInit, OnModuleDestroy {
 
         // Evaluate for all users
         for (const config of this.activeUserConfigs) {
-          if (
-            !config.emaReversalFilter ||
-            config.emaTimeframe.toLowerCase() !== tf
-          ) {
+          const tfList = config.emaTimeframe
+            .split(',')
+            .map((s) => s.trim().toLowerCase())
+            .filter(Boolean);
+          if (!config.emaReversalFilter || !tfList.includes(tf)) {
             continue;
           }
 
