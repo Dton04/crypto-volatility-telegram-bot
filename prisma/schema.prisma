@@ -24,14 +24,14 @@ enum Timeframe {
 }
 
 model User {
-  id          String        @id @default(uuid())
-  telegramId  String        @unique // Chat ID from Telegram
-  username    String?
-  firstName   String?
-  lastName    String?
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
-  
+  id         String   @id @default(uuid())
+  telegramId String   @unique // Chat ID from Telegram
+  username   String?
+  firstName  String?
+  lastName   String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
   alertsConfig AlertsConfig?
   alertLogs    AlertLog[]
 
@@ -39,39 +39,37 @@ model User {
 }
 
 model AlertsConfig {
-  id                 String   @id @default(uuid())
-  userId             String   @unique
-  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  priceThreshold1h   Float    @default(5.0)   // % threshold for 1 hour price change
-  priceThreshold24h  Float    @default(15.0)  // % threshold for 24 hour price change
-  volumeThreshold1h  Float    @default(100.0) // % threshold for 1 hour volume change (e.g. 100% = 2x volume)
-  volumeThreshold24h Float    @default(300.0) // % threshold for 24 hour volume change (e.g. 300% = 4x volume)
-  
-  isActive           Boolean  @default(true)
-  isMuted            Boolean  @default(false)
-  emaReversalFilter  Boolean  @default(false)
-  emaTimeframe       String   @default("4h")
-  minVolume24h       Float    @default(1000000.0) // Minimum 24h volume in USDT
-  emaTrendFilter     Boolean  @default(false)     // Filter out setups that do not match EMA trend
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  id     String @id @default(uuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  volumeThreshold24h Float @default(300.0) // % threshold for 24 hour volume change (e.g. 300% = 4x volume)
+
+  isActive          Boolean  @default(true)
+  emaReversalFilter Boolean  @default(false)
+  emaTimeframe      String   @default("4h")
+  minVolume24h      Float    @default(1000000.0) // Minimum 24h volume in USDT
+  emaTrendFilter    Boolean  @default(false) // Filter out setups that do not match EMA trend
+  emaTarget         String   @default("all") // "all" | "34" | "89" | "200"
+  candlePattern     String   @default("all") // "all" | "hammer" | "shooting_star" | "engulfing" | "doji"
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   @@index([userId])
   @@index([isActive])
 }
 
 model AlertLog {
-  id               String    @id @default(uuid())
-  userId           String
-  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  symbol           String    // e.g., "BTCUSDT"
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  symbol           String // e.g., "BTCUSDT"
   alertType        AlertType
   timeframe        Timeframe
-  oldValue         Float     // Previous value (price or volume)
-  newValue         Float     // Trigger value
-  percentageChange Float     // The percentage change calculated
+  oldValue         Float // Previous value (price or volume)
+  newValue         Float // Trigger value
+  percentageChange Float // The percentage change calculated
   createdAt        DateTime  @default(now())
 
   // Optimized compound index for querying user alert history ordered by newest first

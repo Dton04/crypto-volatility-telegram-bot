@@ -88,7 +88,7 @@ export class AlertsConsumer extends WorkerHost {
         `• *New Price*: \`$${newValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}\`\n\n` +
         `📊 [View Chart on TradingView](${chartLink})`;
     } else {
-      const isReversal = pattern && touchEma !== undefined && touchEma !== null;
+      const isReversal = !!pattern;
       const tfText = (emaTimeframe || '4h').toUpperCase();
 
       if (isReversal) {
@@ -109,12 +109,25 @@ export class AlertsConsumer extends WorkerHost {
           directionText = 'SHORT';
         }
 
+        const showVolumeInfo = newValue > 0;
+        const volumeLines = showVolumeInfo
+          ? `• *Volume Increase*: *${formattedChange}*\n` +
+            `• *Volume (${timeframe === 'H1' ? '1h' : '24h'})*: \`${newValue.toLocaleString(undefined, { maximumFractionDigits: 0 })} USDT\`\n`
+          : '';
+
+        const hasTouch = touchEma !== undefined && touchEma !== null;
+        const titleLine = hasTouch
+          ? `${titleEmoji} *[EMA ${tfText} ${directionText} SETUP] ${symbol}* ${titleEmoji}`
+          : `${titleEmoji} *[CANDLE ${tfText} ${directionText} REVERSAL] ${symbol}* ${titleEmoji}`;
+
+        const setupLine = hasTouch
+          ? `• *Setup*: \`${pattern}\` at EMA ${emaName} (\`$${touchEma}\`)\n• *Touch Diff*: \`${touchDiff}%\`\n`
+          : `• *Pattern*: \`${pattern}\` detected (No EMA constraint)\n`;
+
         message =
-          `${titleEmoji} *[EMA ${tfText} ${directionText} SETUP] ${symbol}* ${titleEmoji}\n\n` +
-          `• *Setup*: \`${pattern}\` at EMA ${emaName} (\`$${touchEma}\`)\n` +
-          `• *Touch Diff*: \`${touchDiff}%\`\n` +
-          `• *Volume Increase*: *${formattedChange}*\n` +
-          `• *Volume (${timeframe === 'H1' ? '1h' : '24h'})*: \`${newValue.toLocaleString(undefined, { maximumFractionDigits: 0 })} USDT\`\n` +
+          `${titleLine}\n\n` +
+          setupLine +
+          volumeLines +
           `• *Price*: \`$${priceStr}\`\n\n` +
           `📈 *EMA Status (${tfText})*:\n` +
           `  - EMA 34: \`$${ema34}\`\n` +

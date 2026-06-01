@@ -36,14 +36,13 @@ interface PriceVolumeState {
 interface UserConfigCache {
   userId: string;
   telegramId: string;
-  priceThreshold1h: number;
-  priceThreshold24h: number;
-  volumeThreshold1h: number;
   volumeThreshold24h: number;
   emaReversalFilter: boolean;
   emaTimeframe: string;
   minVolume24h: number;
   emaTrendFilter: boolean;
+  emaTarget: string;
+  candlePattern: string;
 }
 
 @Injectable()
@@ -58,6 +57,9 @@ export class BinanceWorkerService implements OnModuleInit, OnModuleDestroy {
   // Local cache of active user configs to prevent hitting DB on every WebSocket tick
   private activeUserConfigs: UserConfigCache[] = [];
   private configRefreshTimer?: NodeJS.Timeout;
+
+  // Track last hour where independent EMA scans were run
+  private lastScannedHour = -1;
 
   // Cooldown tracker to prevent spamming: Map<"userId:symbol:alertType", expiryTimestamp>
   private readonly alertCooldowns = new Map<string, number>();
@@ -97,7 +99,6 @@ export class BinanceWorkerService implements OnModuleInit, OnModuleDestroy {
       const activeConfigs = await this.databaseService.alertsConfig.findMany({
         where: {
           isActive: true,
-          isMuted: false,
         },
         include: {
           user: true,
@@ -107,14 +108,13 @@ export class BinanceWorkerService implements OnModuleInit, OnModuleDestroy {
       this.activeUserConfigs = activeConfigs.map((config) => ({
         userId: config.userId,
         telegramId: config.user.telegramId,
-        priceThreshold1h: config.priceThreshold1h,
-        priceThreshold24h: config.priceThreshold24h,
-        volumeThreshold1h: config.volumeThreshold1h,
         volumeThreshold24h: config.volumeThreshold24h,
         emaReversalFilter: config.emaReversalFilter,
         emaTimeframe: config.emaTimeframe,
         minVolume24h: config.minVolume24h,
         emaTrendFilter: config.emaTrendFilter,
+        emaTarget: config.emaTarget,
+        candlePattern: config.candlePattern,
       }));
 
       this.logger.log(
@@ -197,9 +197,16 @@ export class BinanceWorkerService implements OnModuleInit, OnModuleDestroy {
     const currentMin = Math.floor(now / 60000);
     const currentHour = Math.floor(now / 3600000);
 
+    // Run independent EMA scan when a new hour closes
+    if (this.lastScannedHour === -1) {
+      this.lastScannedHour = currentHour;
+    } else if (currentHour > this.lastScannedHour) {
+      this.lastScannedHour = currentHour;
+      void this.runIndependentEmaScan(currentHour);
+    }
+
     for (const [symbol, tick] of ticks.entries()) {
       const price = parseFloat(tick.c);
-      const openPrice24h = parseFloat(tick.o);
       const cumulativeVolume = parseFloat(tick.q); // Quote asset volume in USDT
 
       let state = this.priceVolumeTracker.get(symbol);
@@ -236,9 +243,6 @@ export class BinanceWorkerService implements OnModuleInit, OnModuleDestroy {
 
         state.prevCumulativeVolume = cumulativeVolume;
         state.lastUpdatedMin = currentMin;
-
-        // Perform 1-hour rolling evaluations
-        await this.evaluateHourlyAlerts(symbol, price, cumulativeVolume, state);
       } else {
         // Update the current minute's running data
         state.prices[state.prices.length - 1] = price;
@@ -251,147 +255,20 @@ export class BinanceWorkerService implements OnModuleInit, OnModuleDestroy {
         state.lastUpdatedHour = currentHour;
 
         // Perform 24-hour rolling evaluations
-        await this.evaluateDailyAlerts(
-          symbol,
-          price,
-          openPrice24h,
-          cumulativeVolume,
-          state,
-        );
+        await this.evaluateDailyAlerts(symbol, price, cumulativeVolume, state);
       }
     }
   }
 
   /**
-   * Evaluates 1h price and volume changes
-   */
-  private async evaluateHourlyAlerts(
-    symbol: string,
-    currentPrice: number,
-    cumulativeVolume: number,
-    state: PriceVolumeState,
-  ) {
-    const price1hAgo = state.prices[59]; // Index 59 is 60 minutes ago in a 120-size array
-    const priceChange1h = ((currentPrice - price1hAgo) / price1hAgo) * 100;
-
-    // Calculate rolling volume in last hour vs. previous hour
-    const volume1hCurr = state.volumes
-      .slice(60, 120)
-      .reduce((sum, v) => sum + v, 0);
-    const volume1hPrev = state.volumes
-      .slice(0, 60)
-      .reduce((sum, v) => sum + v, 0);
-
-    // Calculate volume increase percentage
-    let volumeChange1h = 0;
-    if (volume1hPrev > 0) {
-      volumeChange1h = ((volume1hCurr - volume1hPrev) / volume1hPrev) * 100;
-    } else if (volume1hCurr > 0) {
-      volumeChange1h = 100.0; // 100% increase if prev was empty
-    }
-
-    const now = Date.now();
-
-    for (const config of this.activeUserConfigs) {
-      // 0. Filter by minimum 24h volume
-      if (cumulativeVolume < config.minVolume24h) {
-        continue;
-      }
-
-      // 1. Check 1h Price Alert
-      if (Math.abs(priceChange1h) >= config.priceThreshold1h) {
-        const cooldownKey = `${config.userId}:${symbol}:PRICE_1H`;
-        const cooldownExpiry = this.alertCooldowns.get(cooldownKey) || 0;
-
-        if (now > cooldownExpiry) {
-          void this.alertsQueue.add('alert-job', {
-            userId: config.userId,
-            telegramId: config.telegramId,
-            symbol,
-            alertType: 'PRICE_VOLATILITY',
-            timeframe: 'H1',
-            oldValue: price1hAgo,
-            newValue: currentPrice,
-            percentageChange: priceChange1h,
-          });
-
-          // Set 15 minutes cooldown
-          this.alertCooldowns.set(cooldownKey, now + 15 * 60 * 1000);
-        }
-      }
-
-      // 2. Check 1h Volume Alert
-      if (volumeChange1h >= config.volumeThreshold1h && volume1hCurr > 5000) {
-        // Limit noise with min 5000 USDT vol
-        const cooldownKey = `${config.userId}:${symbol}:VOLUME_1H`;
-        const cooldownExpiry = this.alertCooldowns.get(cooldownKey) || 0;
-
-        if (now > cooldownExpiry) {
-          const emaData = await this.getEmaReversalData(
-            symbol,
-            config.emaTimeframe,
-            config.emaTrendFilter,
-          );
-
-          let shouldAlert = true;
-          if (config.emaReversalFilter) {
-            if (
-              !emaData ||
-              emaData.touchEma === null ||
-              emaData.pattern === null
-            ) {
-              shouldAlert = false;
-            }
-          }
-
-          if (shouldAlert) {
-            void this.alertsQueue.add('alert-job', {
-              userId: config.userId,
-              telegramId: config.telegramId,
-              symbol,
-              alertType: 'VOLUME_VOLATILITY',
-              timeframe: 'H1',
-              oldValue: volume1hPrev,
-              newValue: volume1hCurr,
-              percentageChange: volumeChange1h,
-              currentPrice,
-              emaTimeframe: config.emaTimeframe,
-              touchEma: emaData?.touchEma,
-              emaName: emaData?.emaName,
-              touchDiff: emaData?.touchDiff,
-              pattern: emaData?.pattern,
-              nearestEmaName: emaData?.nearestEmaName,
-              nearestEmaVal: emaData?.nearestEmaVal,
-              nearestEmaDiff: emaData?.nearestEmaDiff,
-              ema34: emaData?.ema34,
-              ema89: emaData?.ema89,
-              ema200: emaData?.ema200,
-              setupDirection: emaData?.setupDirection,
-            });
-
-            // Set 15 minutes cooldown
-            this.alertCooldowns.set(cooldownKey, now + 15 * 60 * 1000);
-          }
-        }
-      }
-    }
-
-    // Proactively clean up expired cooldowns to save RAM
-    this.cleanExpiredCooldowns(now);
-  }
-
-  /**
-   * Evaluates 24h price and volume changes
+   * Evaluates 24h volume changes
    */
   private async evaluateDailyAlerts(
     symbol: string,
     currentPrice: number,
-    openPrice24h: number,
     cumulativeVolume: number,
     state: PriceVolumeState,
   ) {
-    const priceChange24h = ((currentPrice - openPrice24h) / openPrice24h) * 100;
-
     const volume24hCurr = state.dailyVolumes[state.dailyVolumes.length - 1];
     const volume24hAgo = state.dailyVolumes[0];
 
@@ -408,29 +285,7 @@ export class BinanceWorkerService implements OnModuleInit, OnModuleDestroy {
         continue;
       }
 
-      // 1. Check 24h Price Alert
-      if (Math.abs(priceChange24h) >= config.priceThreshold24h) {
-        const cooldownKey = `${config.userId}:${symbol}:PRICE_24H`;
-        const cooldownExpiry = this.alertCooldowns.get(cooldownKey) || 0;
-
-        if (now > cooldownExpiry) {
-          void this.alertsQueue.add('alert-job', {
-            userId: config.userId,
-            telegramId: config.telegramId,
-            symbol,
-            alertType: 'PRICE_VOLATILITY',
-            timeframe: 'H24',
-            oldValue: openPrice24h,
-            newValue: currentPrice,
-            percentageChange: priceChange24h,
-          });
-
-          // Set 1 hour cooldown for daily alerts
-          this.alertCooldowns.set(cooldownKey, now + 60 * 60 * 1000);
-        }
-      }
-
-      // 2. Check 24h Volume Alert
+      // 1. Check 24h Volume Alert
       if (
         volumeChange24h >= config.volumeThreshold24h &&
         volume24hCurr > 50000
@@ -442,48 +297,35 @@ export class BinanceWorkerService implements OnModuleInit, OnModuleDestroy {
           const emaData = await this.getEmaReversalData(
             symbol,
             config.emaTimeframe,
-            config.emaTrendFilter,
+            'all',
+            false,
           );
 
-          let shouldAlert = true;
-          if (config.emaReversalFilter) {
-            if (
-              !emaData ||
-              emaData.touchEma === null ||
-              emaData.pattern === null
-            ) {
-              shouldAlert = false;
-            }
-          }
+          void this.alertsQueue.add('alert-job', {
+            userId: config.userId,
+            telegramId: config.telegramId,
+            symbol,
+            alertType: 'VOLUME_VOLATILITY',
+            timeframe: 'H24',
+            oldValue: volume24hAgo,
+            newValue: volume24hCurr,
+            percentageChange: volumeChange24h,
+            currentPrice,
+            emaTimeframe: config.emaTimeframe,
+            touchEma: null,
+            emaName: null,
+            touchDiff: null,
+            pattern: null,
+            nearestEmaName: emaData?.nearestEmaName,
+            nearestEmaVal: emaData?.nearestEmaVal,
+            nearestEmaDiff: emaData?.nearestEmaDiff,
+            ema34: emaData?.ema34,
+            ema89: emaData?.ema89,
+            ema200: emaData?.ema200,
+          });
 
-          if (shouldAlert) {
-            void this.alertsQueue.add('alert-job', {
-              userId: config.userId,
-              telegramId: config.telegramId,
-              symbol,
-              alertType: 'VOLUME_VOLATILITY',
-              timeframe: 'H24',
-              oldValue: volume24hAgo,
-              newValue: volume24hCurr,
-              percentageChange: volumeChange24h,
-              currentPrice,
-              emaTimeframe: config.emaTimeframe,
-              touchEma: emaData?.touchEma,
-              emaName: emaData?.emaName,
-              touchDiff: emaData?.touchDiff,
-              pattern: emaData?.pattern,
-              nearestEmaName: emaData?.nearestEmaName,
-              nearestEmaVal: emaData?.nearestEmaVal,
-              nearestEmaDiff: emaData?.nearestEmaDiff,
-              ema34: emaData?.ema34,
-              ema89: emaData?.ema89,
-              ema200: emaData?.ema200,
-              setupDirection: emaData?.setupDirection,
-            });
-
-            // Set 1 hour cooldown for daily alerts
-            this.alertCooldowns.set(cooldownKey, now + 60 * 60 * 1000);
-          }
+          // Set 1 hour cooldown for daily alerts
+          this.alertCooldowns.set(cooldownKey, now + 60 * 60 * 1000);
         }
       }
     }
@@ -570,6 +412,7 @@ export class BinanceWorkerService implements OnModuleInit, OnModuleDestroy {
   private async getEmaReversalData(
     symbol: string,
     timeframe: string,
+    targetEma = 'all',
     emaTrendFilter = false,
   ) {
     try {
@@ -612,15 +455,21 @@ export class BinanceWorkerService implements OnModuleInit, OnModuleDestroy {
       let emaName: string | null = null;
       let touchDiff: number | null = null;
 
-      if (touch34.touched) {
+      if (touch34.touched && (targetEma === 'all' || targetEma === '34')) {
         touchEma = ema34;
         emaName = '34';
         touchDiff = touch34.diffPercent;
-      } else if (touch89.touched) {
+      } else if (
+        touch89.touched &&
+        (targetEma === 'all' || targetEma === '89')
+      ) {
         touchEma = ema89;
         emaName = '89';
         touchDiff = touch89.diffPercent;
-      } else if (touch200.touched) {
+      } else if (
+        touch200.touched &&
+        (targetEma === 'all' || targetEma === '200')
+      ) {
         touchEma = ema200;
         emaName = '200';
         touchDiff = touch200.diffPercent;
@@ -684,6 +533,158 @@ export class BinanceWorkerService implements OnModuleInit, OnModuleDestroy {
     } catch (err) {
       this.logger.error(`Error calculating EMA Reversal for ${symbol}:`, err);
       return null;
+    }
+  }
+
+  private async runIndependentEmaScan(currentHour: number) {
+    const timeframesToScan = new Set<string>();
+    for (const config of this.activeUserConfigs) {
+      if (config.emaReversalFilter) {
+        const tf = config.emaTimeframe.toLowerCase();
+        if (tf === '1h') timeframesToScan.add('1h');
+        if (tf === '4h' && currentHour % 4 === 0) timeframesToScan.add('4h');
+        if (tf === '1d' && currentHour % 24 === 0) timeframesToScan.add('1d');
+      }
+    }
+
+    if (timeframesToScan.size === 0) {
+      this.logger.log(
+        'No active users requiring independent EMA scan in this hour.',
+      );
+      return;
+    }
+
+    const symbols = Array.from(this.priceVolumeTracker.keys());
+    this.logger.log(
+      `Starting independent EMA scan for ${symbols.length} symbols across timeframes: ${Array.from(timeframesToScan).join(', ').toUpperCase()}`,
+    );
+
+    const matchPattern = (
+      detectedPattern: string,
+      targetPattern: string,
+    ): boolean => {
+      if (targetPattern === 'all') return true;
+      const lowerDetected = detectedPattern.toLowerCase();
+      if (targetPattern === 'hammer') return lowerDetected.includes('hammer');
+      if (targetPattern === 'shooting_star') {
+        return (
+          lowerDetected.includes('shooting star') ||
+          lowerDetected.includes('shooting_star')
+        );
+      }
+      if (targetPattern === 'engulfing')
+        return lowerDetected.includes('engulfing');
+      if (targetPattern === 'doji') return lowerDetected.includes('doji');
+      return false;
+    };
+
+    for (const tf of timeframesToScan) {
+      for (const symbol of symbols) {
+        const trackerState = this.priceVolumeTracker.get(symbol);
+        if (!trackerState) continue;
+
+        // Fetch EMA reversal data
+        const emaData = await this.getEmaReversalData(symbol, tf, 'all', false);
+        if (!emaData || emaData.pattern === null) {
+          continue;
+        }
+
+        // Evaluate for all users
+        for (const config of this.activeUserConfigs) {
+          if (
+            !config.emaReversalFilter ||
+            config.emaTimeframe.toLowerCase() !== tf
+          ) {
+            continue;
+          }
+
+          // 1. Min Volume 24h filter
+          const cumulativeVolume = trackerState.prevCumulativeVolume;
+          if (cumulativeVolume < config.minVolume24h) {
+            continue;
+          }
+
+          // 2. Specific EMA Target filter / Candle Only evaluation
+          let touchEma: number | null = null;
+          let emaName: string | null = null;
+          let touchDiff: number | null = null;
+
+          if (config.emaTarget === 'none') {
+            // Candle only mode: does not require touchEma to be non-null.
+            touchEma = null;
+            emaName = null;
+            touchDiff = null;
+          } else {
+            // Reversal mode: requires a valid touchEma
+            if (emaData.touchEma === null) {
+              continue;
+            }
+            if (
+              config.emaTarget !== 'all' &&
+              emaData.emaName !== config.emaTarget
+            ) {
+              continue;
+            }
+            touchEma = emaData.touchEma;
+            emaName = emaData.emaName;
+            touchDiff = emaData.touchDiff;
+          }
+
+          // 3. Specific Candlestick Pattern filter
+          if (!matchPattern(emaData.pattern, config.candlePattern)) {
+            continue;
+          }
+
+          // 4. EMA Trend filter
+          if (config.emaTrendFilter) {
+            const isBullishTrend =
+              emaData.ema34 > emaData.ema89 && emaData.ema89 > emaData.ema200;
+            const isBearishTrend =
+              emaData.ema34 < emaData.ema89 && emaData.ema89 < emaData.ema200;
+            const setupDirection = emaData.setupDirection;
+
+            if (setupDirection === 'LONG' && !isBullishTrend) continue;
+            if (setupDirection === 'SHORT' && !isBearishTrend) continue;
+            if (!setupDirection) continue;
+          }
+
+          // Check cooldown
+          const cooldownKey = `${config.userId}:${symbol}:EMA_INDEPENDENT_${tf}`;
+          const nowMs = Date.now();
+          const cooldownExpiry = this.alertCooldowns.get(cooldownKey) || 0;
+          if (nowMs > cooldownExpiry) {
+            void this.alertsQueue.add('alert-job', {
+              userId: config.userId,
+              telegramId: config.telegramId,
+              symbol,
+              alertType: 'VOLUME_VOLATILITY',
+              timeframe: tf === '1d' ? 'H24' : 'H1',
+              oldValue: 0,
+              newValue: 0,
+              percentageChange: 0,
+              currentPrice: emaData.currentPrice,
+              emaTimeframe: tf,
+              touchEma,
+              emaName,
+              touchDiff,
+              pattern: emaData.pattern,
+              nearestEmaName: emaData.nearestEmaName,
+              nearestEmaVal: emaData.nearestEmaVal,
+              nearestEmaDiff: emaData.nearestEmaDiff,
+              ema34: emaData.ema34,
+              ema89: emaData.ema89,
+              ema200: emaData.ema200,
+              setupDirection: emaData.setupDirection,
+            });
+
+            // Set 2 hours cooldown
+            this.alertCooldowns.set(cooldownKey, nowMs + 2 * 60 * 60 * 1000);
+          }
+        }
+
+        // Delay 50ms to prevent rate limiting
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
     }
   }
 }
