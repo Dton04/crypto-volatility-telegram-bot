@@ -610,10 +610,11 @@ export class BinanceWorkerService implements OnModuleInit, OnModuleDestroy {
           let touchDiff: number | null = null;
 
           if (config.emaTarget === 'none') {
-            // Candle only mode: does not require touchEma to be non-null.
-            touchEma = null;
-            emaName = null;
-            touchDiff = null;
+            // Candle only mode: does not require touchEma to be non-null,
+            // but we still pass the touch info if it happened to touch!
+            touchEma = emaData.touchEma;
+            emaName = emaData.emaName;
+            touchDiff = emaData.touchDiff;
           } else {
             // Reversal mode: requires a valid touchEma
             if (emaData.touchEma === null) {
