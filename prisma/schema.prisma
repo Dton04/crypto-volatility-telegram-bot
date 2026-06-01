@@ -50,6 +50,10 @@ model AlertsConfig {
   
   isActive           Boolean  @default(true)
   isMuted            Boolean  @default(false)
+  emaReversalFilter  Boolean  @default(false)
+  emaTimeframe       String   @default("4h")
+  minVolume24h       Float    @default(1000000.0) // Minimum 24h volume in USDT
+  emaTrendFilter     Boolean  @default(false)     // Filter out setups that do not match EMA trend
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 

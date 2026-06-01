@@ -15,7 +15,7 @@ import { BinanceWorkerService } from './binance-worker.service';
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => {
         const password = configService.get<string>('REDIS_PASSWORD');
-        const connection: any = {
+        const connection: { host: string; port: number; password?: string } = {
           host: configService.get<string>('REDIS_HOST', 'localhost'),
           port: configService.get<number>('REDIS_PORT', 6379),
         };

@@ -80,6 +80,10 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
                   volumeThreshold24h: 300.0,
                   isActive: true,
                   isMuted: false,
+                  emaReversalFilter: false,
+                  emaTimeframe: '4h',
+                  minVolume24h: 1000000.0,
+                  emaTrendFilter: false,
                 },
               },
             },
@@ -327,6 +331,77 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
             parse_mode: 'Markdown',
             reply_markup: keyboard.reply_markup,
           });
+        } else if (callbackData === 'toggle_ema_reversal') {
+          const updated = await this.databaseService.alertsConfig.update({
+            where: { id: config.id },
+            data: { emaReversalFilter: !config.emaReversalFilter },
+          });
+          await ctx.answerCbQuery(
+            `EMA Reversal ${updated.emaReversalFilter ? 'Enabled' : 'Disabled'}`,
+          );
+          const { text, keyboard } = this.renderSettingsMenu(updated);
+          await ctx.editMessageText(text, {
+            parse_mode: 'Markdown',
+            reply_markup: keyboard.reply_markup,
+          });
+        } else if (callbackData === 'menu_ema_tf') {
+          const keyboard = Markup.inlineKeyboard([
+            [
+              Markup.button.callback('1 Hour (H1)', 'set_ema_tf:1h'),
+              Markup.button.callback('4 Hours (H4) ⭐', 'set_ema_tf:4h'),
+              Markup.button.callback('1 Day (D1) ⭐', 'set_ema_tf:1d'),
+            ],
+            [Markup.button.callback('⬅️ Back', 'back_to_settings')],
+          ]);
+          await ctx.editMessageText('⏳ Select EMA & Candlestick Timeframe:', {
+            reply_markup: keyboard.reply_markup,
+          });
+        } else if (callbackData.startsWith('set_ema_tf:')) {
+          const tf = callbackData.split(':')[1];
+          const updated = await this.databaseService.alertsConfig.update({
+            where: { id: config.id },
+            data: { emaTimeframe: tf },
+          });
+          await ctx.answerCbQuery(`EMA Timeframe set to ${tf.toUpperCase()}`);
+          const { text, keyboard } = this.renderSettingsMenu(updated);
+          await ctx.editMessageText(text, {
+            parse_mode: 'Markdown',
+            reply_markup: keyboard.reply_markup,
+          });
+        } else if (callbackData === 'cycle_min_vol') {
+          let nextVol = 1000000;
+          if (config.minVolume24h === 1000000) nextVol = 2000000;
+          else if (config.minVolume24h === 2000000) nextVol = 3000000;
+          else if (config.minVolume24h === 3000000) nextVol = 5000000;
+          else if (config.minVolume24h === 5000000) nextVol = 10000000;
+          else if (config.minVolume24h === 10000000) nextVol = 0;
+          else nextVol = 1000000;
+
+          const updated = await this.databaseService.alertsConfig.update({
+            where: { id: config.id },
+            data: { minVolume24h: nextVol },
+          });
+          const volText =
+            nextVol === 0 ? 'Disabled' : `${nextVol / 1000000}M USDT`;
+          await ctx.answerCbQuery(`Min 24h Vol set to ${volText}`);
+          const { text, keyboard } = this.renderSettingsMenu(updated);
+          await ctx.editMessageText(text, {
+            parse_mode: 'Markdown',
+            reply_markup: keyboard.reply_markup,
+          });
+        } else if (callbackData === 'toggle_ema_trend') {
+          const updated = await this.databaseService.alertsConfig.update({
+            where: { id: config.id },
+            data: { emaTrendFilter: !config.emaTrendFilter },
+          });
+          await ctx.answerCbQuery(
+            `Trend Filter ${updated.emaTrendFilter ? 'Enabled' : 'Disabled'}`,
+          );
+          const { text, keyboard } = this.renderSettingsMenu(updated);
+          await ctx.editMessageText(text, {
+            parse_mode: 'Markdown',
+            reply_markup: keyboard.reply_markup,
+          });
         }
       } catch (error) {
         this.logger.error('Error handling callback query:', error);
@@ -355,6 +430,10 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
               volumeThreshold24h: 300.0,
               isActive: true,
               isMuted: false,
+              emaReversalFilter: false,
+              emaTimeframe: '4h',
+              minVolume24h: 1000000.0,
+              emaTrendFilter: false,
             },
           },
         },
@@ -371,15 +450,34 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
     priceThreshold24h: number;
     volumeThreshold1h: number;
     volumeThreshold24h: number;
+    emaReversalFilter: boolean;
+    emaTimeframe: string;
+    minVolume24h: number;
+    emaTrendFilter: boolean;
   }) {
     const formatValue = (val: number) =>
       val >= 999999 ? 'Disabled' : `${val}%`;
+
+    const formatMinVolume = (val: number) => {
+      if (val === 0) return 'Disabled';
+      if (val >= 1000000) return `${val / 1000000}M USDT`;
+      return `${val.toLocaleString()} USDT`;
+    };
+
+    const reversalStatusText = config.emaReversalFilter
+      ? '🟢 Active'
+      : '🔴 Inactive';
+    const tfText = (config.emaTimeframe || '4h').toUpperCase();
+
     const text =
       `⚙️ *Real-time Alert Settings*\n\n` +
       `• *Status*: ${config.isActive ? '🟢 Active' : '🔴 Inactive'}\n` +
       `• *Mute Mode*: ${config.isMuted ? '🔕 Muted' : '🔔 Unmuted'}\n` +
       `• *Price Threshold*: 1h: \`±${formatValue(config.priceThreshold1h)}\` | 24h: \`±${formatValue(config.priceThreshold24h)}\`\n` +
-      `• *Volume Threshold*: 1h: \`+${formatValue(config.volumeThreshold1h)}\` | 24h: \`+${formatValue(config.volumeThreshold24h)}\`\n\n` +
+      `• *Volume Threshold*: 1h: \`+${formatValue(config.volumeThreshold1h)}\` | 24h: \`+${formatValue(config.volumeThreshold24h)}\`\n` +
+      `• *Min 24h Volume*: \`${formatMinVolume(config.minVolume24h)}\`\n` +
+      `• *EMA Reversal*: \`${reversalStatusText}\` | *EMA TF*: \`${tfText}\`\n` +
+      `• *Trend Filter (EMA)*: \`${config.emaTrendFilter ? '🟢 Active' : '🔴 Inactive'}\`\n\n` +
       `Customize your alerts below:`;
 
     const keyboard = Markup.inlineKeyboard([
@@ -396,6 +494,20 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
       [
         Markup.button.callback('📈 Price Threshold', 'menu_price'),
         Markup.button.callback('📊 Volume Threshold', 'menu_vol'),
+      ],
+      [
+        Markup.button.callback(
+          config.emaReversalFilter ? '🔴 Stop EMA Filter' : '🟢 Run EMA Filter',
+          'toggle_ema_reversal',
+        ),
+        Markup.button.callback('⏳ EMA Timeframe', 'menu_ema_tf'),
+      ],
+      [
+        Markup.button.callback('💰 Min 24h Vol', 'cycle_min_vol'),
+        Markup.button.callback(
+          config.emaTrendFilter ? '🔴 Stop Trend Fltr' : '🟢 Run Trend Fltr',
+          'toggle_ema_trend',
+        ),
       ],
     ]);
 

@@ -14,6 +14,19 @@ interface AlertJobData {
   oldValue: number;
   newValue: number;
   percentageChange: number;
+  currentPrice?: number;
+  emaTimeframe?: string;
+  touchEma?: number | null;
+  emaName?: string | null;
+  touchDiff?: number | null;
+  pattern?: string | null;
+  nearestEmaName?: string;
+  nearestEmaVal?: number;
+  nearestEmaDiff?: number;
+  ema34?: number;
+  ema89?: number;
+  ema200?: number;
+  setupDirection?: 'LONG' | 'SHORT' | null;
 }
 
 @Processor('telegram-alerts')
@@ -38,6 +51,19 @@ export class AlertsConsumer extends WorkerHost {
       oldValue,
       newValue,
       percentageChange,
+      currentPrice,
+      emaTimeframe,
+      touchEma,
+      emaName,
+      touchDiff,
+      pattern,
+      nearestEmaName,
+      nearestEmaVal,
+      nearestEmaDiff,
+      ema34,
+      ema89,
+      ema200,
+      setupDirection,
     } = data;
 
     this.logger.log(
@@ -62,13 +88,57 @@ export class AlertsConsumer extends WorkerHost {
         `• *New Price*: \`$${newValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}\`\n\n` +
         `📊 [View Chart on TradingView](${chartLink})`;
     } else {
-      message =
-        `🚨 *[VOLUME ALERT] ${symbol}* 📊\n\n` +
-        `• *Timeframe*: ${timeframe === 'H1' ? '1 Hour' : '24 Hours'}\n` +
-        `• *Increase*: *${formattedChange}*\n` +
-        `• *Old Volume*: \`${oldValue.toLocaleString(undefined, { maximumFractionDigits: 0 })} USDT\`\n` +
-        `• *New Volume*: \`${newValue.toLocaleString(undefined, { maximumFractionDigits: 0 })} USDT\`\n\n` +
-        `📊 [View Chart on TradingView](${chartLink})`;
+      const isReversal = pattern && touchEma !== undefined && touchEma !== null;
+      const tfText = (emaTimeframe || '4h').toUpperCase();
+
+      if (isReversal) {
+        const priceStr = currentPrice
+          ? currentPrice.toLocaleString(undefined, {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 6,
+            })
+          : 'N/A';
+
+        let titleEmoji = '🔥';
+        let directionText = 'REVERSAL';
+        if (setupDirection === 'LONG') {
+          titleEmoji = '🟢 🚀';
+          directionText = 'LONG';
+        } else if (setupDirection === 'SHORT') {
+          titleEmoji = '🔴 📉';
+          directionText = 'SHORT';
+        }
+
+        message =
+          `${titleEmoji} *[EMA ${tfText} ${directionText} SETUP] ${symbol}* ${titleEmoji}\n\n` +
+          `• *Setup*: \`${pattern}\` at EMA ${emaName} (\`$${touchEma}\`)\n` +
+          `• *Touch Diff*: \`${touchDiff}%\`\n` +
+          `• *Volume Increase*: *${formattedChange}*\n` +
+          `• *Volume (${timeframe === 'H1' ? '1h' : '24h'})*: \`${newValue.toLocaleString(undefined, { maximumFractionDigits: 0 })} USDT\`\n` +
+          `• *Price*: \`$${priceStr}\`\n\n` +
+          `📈 *EMA Status (${tfText})*:\n` +
+          `  - EMA 34: \`$${ema34}\`\n` +
+          `  - EMA 89: \`$${ema89}\`\n` +
+          `  - EMA 200: \`$${ema200}\`\n\n` +
+          `📊 [View Chart on TradingView](${chartLink})`;
+      } else {
+        let emaFooter = '';
+        if (nearestEmaName && nearestEmaVal !== undefined) {
+          emaFooter =
+            `📈 *EMA Info (${tfText})*:\n` +
+            `  - Nearest: EMA ${nearestEmaName} (\`$${nearestEmaVal}\`) | Diff: \`${nearestEmaDiff}%\`\n` +
+            `  - EMA 34: \`$${ema34}\` | EMA 89: \`$${ema89}\` | EMA 200: \`$${ema200}\`\n\n`;
+        }
+
+        message =
+          `🚨 *[VOLUME ALERT] ${symbol}* 📊\n\n` +
+          `• *Timeframe*: ${timeframe === 'H1' ? '1 Hour' : '24 Hours'}\n` +
+          `• *Increase*: *${formattedChange}*\n` +
+          `• *Old Volume*: \`${oldValue.toLocaleString(undefined, { maximumFractionDigits: 0 })} USDT\`\n` +
+          `• *New Volume*: \`${newValue.toLocaleString(undefined, { maximumFractionDigits: 0 })} USDT\`\n\n` +
+          emaFooter +
+          `📊 [View Chart on TradingView](${chartLink})`;
+      }
     }
 
     try {
