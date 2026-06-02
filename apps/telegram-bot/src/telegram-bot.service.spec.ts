@@ -3,6 +3,10 @@ import { TelegramBotService } from './telegram-bot.service';
 import { ConfigService } from '@nestjs/config';
 import { DatabaseService } from 'app/database';
 
+import { UserService } from './user/user.service';
+import { TelegramSettingsService } from './settings/telegram-settings.service';
+import { TelegramTestService } from './test-command/telegram-test.service';
+
 jest.mock('telegraf', () => {
   return {
     Telegraf: jest.fn().mockImplementation(() => {
@@ -40,6 +44,9 @@ describe('TelegramBotService', () => {
         TelegramBotService,
         { provide: ConfigService, useValue: mockConfigService },
         { provide: DatabaseService, useValue: mockDatabaseService },
+        { provide: UserService, useValue: {} },
+        { provide: TelegramSettingsService, useValue: {} },
+        { provide: TelegramTestService, useValue: {} },
       ],
     }).compile();
 

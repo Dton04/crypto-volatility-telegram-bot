@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { BinanceWorkerService } from './binance-worker.service';
 import { DatabaseService } from 'app/database';
 import { getQueueToken } from '@nestjs/bullmq';
+import { KlineScannerService } from './scanner/kline-scanner.service';
 
 describe('BinanceWorkerService', () => {
   let service: BinanceWorkerService;
@@ -22,6 +23,7 @@ describe('BinanceWorkerService', () => {
         BinanceWorkerService,
         { provide: DatabaseService, useValue: mockDatabaseService },
         { provide: getQueueToken('telegram-alerts'), useValue: mockQueue },
+        { provide: KlineScannerService, useValue: {} },
       ],
     }).compile();
 

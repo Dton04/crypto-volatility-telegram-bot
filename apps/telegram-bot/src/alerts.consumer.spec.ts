@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { AlertsConsumer } from './alerts.consumer';
+import { AlertsConsumer } from './alerts/alerts.consumer';
 import { TelegramBotService } from './telegram-bot.service';
 import { DatabaseService } from 'app/database';
 import { Job } from 'bullmq';
