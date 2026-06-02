@@ -206,12 +206,36 @@ export class KlineScannerService {
         );
       }
 
+      let patternLow = 0;
+      let patternHigh = 0;
+      if (pattern && data.length >= 3) {
+        const prev1 = data[data.length - 2] as string[];
+        const prev2 = data[data.length - 3] as string[];
+        const p1High = parseFloat(prev1[2]);
+        const p1Low = parseFloat(prev1[3]);
+        const p2High = parseFloat(prev2[2]);
+        const p2Low = parseFloat(prev2[3]);
+
+        if (
+          pattern.startsWith('Bullish Engulfing') ||
+          pattern.startsWith('Bearish Engulfing')
+        ) {
+          patternLow = Math.min(p1Low, p2Low);
+          patternHigh = Math.max(p1High, p2High);
+        } else {
+          patternLow = p1Low;
+          patternHigh = p1High;
+        }
+      }
+
       return {
         currentPrice,
         touchEma,
         emaName,
         touchDiff,
         pattern,
+        patternLow,
+        patternHigh,
         setupDirection,
         nearestEmaName: nearest.name,
         nearestEmaVal: nearest.val,
@@ -332,6 +356,8 @@ export class KlineScannerService {
             divCurrRsi: emaData?.divCurrRsi,
             fundingRate: emaData?.fundingRate,
             openInterestValue: emaData?.openInterestValue,
+            patternLow: emaData?.patternLow || 0,
+            patternHigh: emaData?.patternHigh || 0,
           });
 
           // Set 1 hour cooldown for daily alerts
@@ -508,6 +534,8 @@ export class KlineScannerService {
               divCurrRsi: emaData.divCurrRsi,
               fundingRate: emaData.fundingRate,
               openInterestValue: emaData.openInterestValue,
+              patternLow: emaData.patternLow || 0,
+              patternHigh: emaData.patternHigh || 0,
             });
 
             // Set 2 hours cooldown

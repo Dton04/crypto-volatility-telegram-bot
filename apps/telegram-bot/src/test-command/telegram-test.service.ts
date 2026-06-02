@@ -23,6 +23,8 @@ interface TestResult {
   divCurrRsi: number;
   fundingRate: number | null;
   openInterestValue: number | null;
+  patternLow?: number;
+  patternHigh?: number;
 }
 
 @Injectable()
@@ -338,6 +340,9 @@ export class TelegramTestService {
           const touch200 = checkTouch(currentPrice, ema200);
 
           let pattern = null;
+          let patternLow = 0;
+          let patternHigh = 0;
+
           if (data.length >= 3) {
             const prev1 = data[data.length - 2] as string[];
             const prev2 = data[data.length - 3] as string[];
@@ -346,6 +351,8 @@ export class TelegramTestService {
             const p1Low = parseFloat(prev1[3]);
             const p1Close = parseFloat(prev1[4]);
             const p2Open = parseFloat(prev2[1]);
+            const p2High = parseFloat(prev2[2]);
+            const p2Low = parseFloat(prev2[3]);
             const p2Close = parseFloat(prev2[4]);
 
             const body1 = Math.abs(p1Close - p1Open);
@@ -359,11 +366,15 @@ export class TelegramTestService {
                 body1 <= totalRange1 * 0.3
               ) {
                 pattern = 'Bullish Hammer 🔨';
+                patternLow = p1Low;
+                patternHigh = p1High;
               } else if (
                 upperShadow1 >= totalRange1 * 0.6 &&
                 body1 <= totalRange1 * 0.3
               ) {
                 pattern = 'Bearish Shooting Star ☄️';
+                patternLow = p1Low;
+                patternHigh = p1High;
               }
             }
 
@@ -377,6 +388,8 @@ export class TelegramTestService {
                   p1Open < p2Close
                 ) {
                   pattern = 'Bullish Engulfing 📈';
+                  patternLow = Math.min(p1Low, p2Low);
+                  patternHigh = Math.max(p1High, p2High);
                 } else if (
                   p2Close > p2Open &&
                   p1Close < p1Open &&
@@ -384,12 +397,16 @@ export class TelegramTestService {
                   p1Open > p2Close
                 ) {
                   pattern = 'Bearish Engulfing 📉';
+                  patternLow = Math.min(p1Low, p2Low);
+                  patternHigh = Math.max(p1High, p2High);
                 }
               }
             }
 
             if (!pattern && totalRange1 > 0 && body1 <= totalRange1 * 0.1) {
               pattern = 'Doji ⏳';
+              patternLow = p1Low;
+              patternHigh = p1High;
             }
           }
 
@@ -457,6 +474,8 @@ export class TelegramTestService {
             divCurrRsi: divData.currRsi,
             fundingRate,
             openInterestValue,
+            patternLow,
+            patternHigh,
           };
         } catch (e) {
           this.logger.error(`Error in getTestInfo for ${tfName}:`, e);
@@ -523,6 +542,63 @@ export class TelegramTestService {
             ? `  • Funding Rate: ${formatFunding(res.fundingRate)}\n  • Open Interest: \`${formatOI(res.openInterestValue)}\` 📊\n`
             : '';
 
+        let touchEma: number | null = null;
+        if (res.touch34.touched) touchEma = res.ema34;
+        else if (res.touch89.touched) touchEma = res.ema89;
+        else if (res.touch200.touched) touchEma = res.ema200;
+
+        let slVal = 0;
+        let tp1Val = 0;
+        let tp2Val = 0;
+        const entryPrice = res.currentPrice;
+
+        if (res.setupDirection === 'LONG') {
+          if (res.patternLow && res.patternLow > 0) {
+            slVal = res.patternLow * 0.992; // 0.8% below pattern low
+          } else if (res.isNearSR && res.srType === 'Support' && res.srPrice) {
+            slVal = res.srPrice * 0.992;
+          } else if (touchEma) {
+            slVal = touchEma * 0.99;
+          } else {
+            slVal = entryPrice * 0.985;
+          }
+          const risk = entryPrice - slVal;
+          tp1Val = entryPrice + risk * 1.5;
+          tp2Val = entryPrice + risk * 2.5;
+        } else if (res.setupDirection === 'SHORT') {
+          if (res.patternHigh && res.patternHigh > 0) {
+            slVal = res.patternHigh * 1.008; // 0.8% above pattern high
+          } else if (
+            res.isNearSR &&
+            res.srType === 'Resistance' &&
+            res.srPrice
+          ) {
+            slVal = res.srPrice * 1.008;
+          } else if (touchEma) {
+            slVal = touchEma * 1.01;
+          } else {
+            slVal = entryPrice * 1.015;
+          }
+          const risk = slVal - entryPrice;
+          tp1Val = entryPrice - risk * 1.5;
+          tp2Val = entryPrice - risk * 2.5;
+        }
+
+        const formatVal = (val: number) =>
+          val.toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 4,
+          });
+
+        const tradingIdeaLine =
+          res.setupDirection && entryPrice > 0
+            ? `  • *Trading Idea (Futures)*:\n` +
+              `    - 📥 *Entry*: \`$${formatVal(entryPrice)}\` (Current)\n` +
+              `    - 🛑 *SL*: \`$${formatVal(slVal)}\` (Risk: \`${Math.abs(((entryPrice - slVal) / entryPrice) * 100).toFixed(2)}%\`)\n` +
+              `    - 🎯 *TP1*: \`$${formatVal(tp1Val)}\` (RR 1:1.5)\n` +
+              `    - 🎯 *TP2*: \`$${formatVal(tp2Val)}\` (RR 1:2.5)\n`
+            : '';
+
         return (
           `*${tfName}*:\n` +
           `  • Price: \`$${res.currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}\`\n` +
@@ -532,6 +608,7 @@ export class TelegramTestService {
           srLine +
           divLine +
           futuresLine +
+          tradingIdeaLine +
           `  • EMA Touches: ${touchStrs.join(', ') || 'None'}\n` +
           `  • EMAs: 34: \`$${res.ema34.toLocaleString(undefined, { maximumFractionDigits: 4 })}\` | 89: \`$${res.ema89.toLocaleString(undefined, { maximumFractionDigits: 4 })}\` | 200: \`$${res.ema200.toLocaleString(undefined, { maximumFractionDigits: 4 })}\`\n`
         );

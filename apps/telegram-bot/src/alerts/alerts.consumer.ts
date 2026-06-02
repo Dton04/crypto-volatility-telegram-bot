@@ -43,6 +43,8 @@ interface AlertJobData {
   divCurrRsi?: number;
   fundingRate?: number | null;
   openInterestValue?: number | null;
+  patternLow?: number;
+  patternHigh?: number;
 }
 
 @Processor('telegram-alerts')
@@ -91,6 +93,8 @@ export class AlertsConsumer extends WorkerHost {
       divCurrRsi,
       fundingRate,
       openInterestValue,
+      patternLow,
+      patternHigh,
     } = data;
 
     const formatOI = (val?: number | null) => {
@@ -197,6 +201,55 @@ export class AlertsConsumer extends WorkerHost {
               `• *Open Interest*: \`${formatOI(openInterestValue)}\` 📊\n`
             : '';
 
+        // Calculate dynamic SL/TP
+        const entryPrice = currentPrice || 0;
+        let slVal = 0;
+        let tp1Val = 0;
+        let tp2Val = 0;
+
+        if (setupDirection === 'LONG') {
+          if (patternLow && patternLow > 0) {
+            slVal = patternLow * 0.992; // 0.8% below pattern low
+          } else if (isNearSR && srType === 'Support' && srPrice) {
+            slVal = srPrice * 0.992;
+          } else if (touchEma) {
+            slVal = touchEma * 0.99;
+          } else {
+            slVal = entryPrice * 0.985;
+          }
+          const risk = entryPrice - slVal;
+          tp1Val = entryPrice + risk * 1.5;
+          tp2Val = entryPrice + risk * 2.5;
+        } else if (setupDirection === 'SHORT') {
+          if (patternHigh && patternHigh > 0) {
+            slVal = patternHigh * 1.008; // 0.8% above pattern high
+          } else if (isNearSR && srType === 'Resistance' && srPrice) {
+            slVal = srPrice * 1.008;
+          } else if (touchEma) {
+            slVal = touchEma * 1.01;
+          } else {
+            slVal = entryPrice * 1.015;
+          }
+          const risk = slVal - entryPrice;
+          tp1Val = entryPrice - risk * 1.5;
+          tp2Val = entryPrice - risk * 2.5;
+        }
+
+        const formatPrice = (val: number) =>
+          val.toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 4,
+          });
+
+        const tradingIdeaLine =
+          setupDirection && entryPrice > 0
+            ? `\n💡 *Trading Signal Idea (Futures):*\n` +
+              `  - 📥 *Entry*: \`$${formatPrice(entryPrice)}\` (Current Price)\n` +
+              `  - 🛑 *Stop Loss (SL)*: \`$${formatPrice(slVal)}\` (Risk: \`${Math.abs(((entryPrice - slVal) / entryPrice) * 100).toFixed(2)}%\`)\n` +
+              `  - 🎯 *Take Profit 1 (TP1)*: \`$${formatPrice(tp1Val)}\` (R:R 1:1.5)\n` +
+              `  - 🎯 *Take Profit 2 (TP2)*: \`$${formatPrice(tp2Val)}\` (R:R 1:2.5)\n`
+            : '';
+
         message =
           `${titleLine}\n\n` +
           setupLine +
@@ -206,6 +259,7 @@ export class AlertsConsumer extends WorkerHost {
           srLine +
           divLine +
           futuresLine +
+          tradingIdeaLine +
           `\n📈 *EMA Status (${tfText})*:\n` +
           `  - EMA 34: \`$${ema34}\`\n` +
           `  - EMA 89: \`$${ema89}\`\n` +
