@@ -4,7 +4,10 @@ import { BullModule } from '@nestjs/bullmq';
 import { DatabaseModule } from 'app/database';
 import { TelegramBotController } from './telegram-bot.controller';
 import { TelegramBotService } from './telegram-bot.service';
-import { AlertsConsumer } from './alerts.consumer';
+import { AlertsConsumer } from './alerts/alerts.consumer';
+import { UserService } from './user/user.service';
+import { TelegramSettingsService } from './settings/telegram-settings.service';
+import { TelegramTestService } from './test-command/telegram-test.service';
 
 @Module({
   imports: [
@@ -36,6 +39,12 @@ import { AlertsConsumer } from './alerts.consumer';
     }),
   ],
   controllers: [TelegramBotController],
-  providers: [TelegramBotService, AlertsConsumer],
+  providers: [
+    TelegramBotService,
+    AlertsConsumer,
+    UserService,
+    TelegramSettingsService,
+    TelegramTestService,
+  ],
 })
 export class TelegramBotModule {}

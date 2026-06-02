@@ -1,7 +1,7 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Job } from 'bullmq';
 import { Logger } from '@nestjs/common';
-import { TelegramBotService } from './telegram-bot.service';
+import { TelegramBotService } from '../telegram-bot.service';
 import { DatabaseService } from 'app/database';
 import { AlertType, Timeframe } from '@prisma/client';
 

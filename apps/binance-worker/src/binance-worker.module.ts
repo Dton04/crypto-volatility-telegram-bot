@@ -4,6 +4,8 @@ import { BullModule } from '@nestjs/bullmq';
 import { DatabaseModule } from 'app/database';
 import { BinanceWorkerController } from './binance-worker.controller';
 import { BinanceWorkerService } from './binance-worker.service';
+import { TechnicalIndicatorsService } from './indicators/technical-indicators.service';
+import { KlineScannerService } from './scanner/kline-scanner.service';
 
 @Module({
   imports: [
@@ -35,6 +37,10 @@ import { BinanceWorkerService } from './binance-worker.service';
     }),
   ],
   controllers: [BinanceWorkerController],
-  providers: [BinanceWorkerService],
+  providers: [
+    BinanceWorkerService,
+    TechnicalIndicatorsService,
+    KlineScannerService,
+  ],
 })
 export class BinanceWorkerModule {}
