@@ -27,6 +27,7 @@ interface AlertJobData {
   ema89?: number;
   ema200?: number;
   setupDirection?: 'LONG' | 'SHORT' | null;
+  rsi?: number;
 }
 
 @Processor('telegram-alerts')
@@ -64,6 +65,7 @@ export class AlertsConsumer extends WorkerHost {
       ema89,
       ema200,
       setupDirection,
+      rsi,
     } = data;
 
     this.logger.log(
@@ -124,12 +126,26 @@ export class AlertsConsumer extends WorkerHost {
           ? `• *Setup*: \`${pattern}\` at EMA ${emaName} (\`$${touchEma}\`)\n• *Touch Diff*: \`${touchDiff}%\`\n`
           : `• *Pattern*: \`${pattern}\` detected (No EMA constraint)\n`;
 
+        const rsiStatus =
+          rsi !== undefined
+            ? rsi <= 30
+              ? 'Oversold 🟢 (Quá Bán)'
+              : rsi >= 70
+                ? 'Overbought 🔴 (Quá Mua)'
+                : 'Neutral ⚪'
+            : '';
+        const rsiLine =
+          rsi !== undefined
+            ? `• *RSI*: \`${rsi.toFixed(2)}\` (${rsiStatus})\n`
+            : '';
+
         message =
           `${titleLine}\n\n` +
           setupLine +
           volumeLines +
-          `• *Price*: \`$${priceStr}\`\n\n` +
-          `📈 *EMA Status (${tfText})*:\n` +
+          `• *Price*: \`$${priceStr}\`\n` +
+          rsiLine +
+          `\n📈 *EMA Status (${tfText})*:\n` +
           `  - EMA 34: \`$${ema34}\`\n` +
           `  - EMA 89: \`$${ema89}\`\n` +
           `  - EMA 200: \`$${ema200}\`\n\n` +
@@ -137,8 +153,22 @@ export class AlertsConsumer extends WorkerHost {
       } else {
         let emaFooter = '';
         if (nearestEmaName && nearestEmaVal !== undefined) {
+          const rsiStatus =
+            rsi !== undefined
+              ? rsi <= 30
+                ? 'Oversold 🟢'
+                : rsi >= 70
+                  ? 'Overbought 🔴'
+                  : 'Neutral ⚪'
+              : '';
+          const rsiLine =
+            rsi !== undefined
+              ? `  - RSI: \`${rsi.toFixed(2)}\` (${rsiStatus})\n`
+              : '';
+
           emaFooter =
             `📈 *EMA Info (${tfText})*:\n` +
+            rsiLine +
             `  - Nearest: EMA ${nearestEmaName} (\`$${nearestEmaVal}\`) | Diff: \`${nearestEmaDiff}%\`\n` +
             `  - EMA 34: \`$${ema34}\` | EMA 89: \`$${ema89}\` | EMA 200: \`$${ema200}\`\n\n`;
         }

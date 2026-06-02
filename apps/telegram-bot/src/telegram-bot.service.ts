@@ -156,6 +156,7 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
           touch200: { touched: boolean; diffPercent: number };
           pattern: string | null;
           trend: string;
+          rsi: number;
         }
 
         const getTestInfo = async (tf: string): Promise<TestResult | null> => {
@@ -179,6 +180,31 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
               ema = prices[i] * k + ema * (1 - k);
             }
             return ema;
+          };
+
+          const calculateRSI = (prices: number[], period = 14) => {
+            if (prices.length <= period) return 50;
+            let gains = 0;
+            let losses = 0;
+            for (let i = 1; i <= period; i++) {
+              const difference = prices[i] - prices[i - 1];
+              if (difference > 0) gains += difference;
+              else losses -= difference;
+            }
+            let avgGain = gains / period;
+            let avgLoss = losses / period;
+            for (let i = period + 1; i < prices.length; i++) {
+              const difference = prices[i] - prices[i - 1];
+              let currentGain = 0;
+              let currentLoss = 0;
+              if (difference > 0) currentGain = difference;
+              else currentLoss = -difference;
+              avgGain = (avgGain * (period - 1) + currentGain) / period;
+              avgLoss = (avgLoss * (period - 1) + currentLoss) / period;
+            }
+            if (avgLoss === 0) return 100;
+            const rs = avgGain / avgLoss;
+            return parseFloat((100 - 100 / (1 + rs)).toFixed(2));
           };
 
           const ema34 = calculateEMA(closes, 34);
@@ -269,6 +295,7 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
             touch200,
             pattern,
             trend,
+            rsi: calculateRSI(closes, 14),
           };
         };
 
@@ -292,11 +319,19 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
           if (res.touch200.touched)
             touchStrs.push(`EMA 200 (${res.touch200.diffPercent}%)`);
 
+          const rsiStatus =
+            res.rsi <= 30
+              ? 'Oversold 🟢 (Quá Bán)'
+              : res.rsi >= 70
+                ? 'Overbought 🔴 (Quá Mua)'
+                : 'Neutral ⚪';
+
           return (
             `*${tfName}*:\n` +
             `  • Price: \`$${res.currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}\`\n` +
             `  • Trend: ${res.trend}\n` +
             `  • Pattern: \`${res.pattern || 'None'}\`\n` +
+            `  • RSI: \`${res.rsi.toFixed(2)}\` (${rsiStatus})\n` +
             `  • EMA Touches: ${touchStrs.join(', ') || 'None'}\n` +
             `  • EMAs: 34: \`$${res.ema34.toLocaleString(undefined, { maximumFractionDigits: 4 })}\` | 89: \`$${res.ema89.toLocaleString(undefined, { maximumFractionDigits: 4 })}\` | 200: \`$${res.ema200.toLocaleString(undefined, { maximumFractionDigits: 4 })}\`\n`
           );
