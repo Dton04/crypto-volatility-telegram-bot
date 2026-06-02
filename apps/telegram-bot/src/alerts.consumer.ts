@@ -28,6 +28,11 @@ interface AlertJobData {
   ema200?: number;
   setupDirection?: 'LONG' | 'SHORT' | null;
   rsi?: number;
+  detectedPatterns?: {
+    tf: string;
+    pattern: string;
+    direction: string | null;
+  }[];
 }
 
 @Processor('telegram-alerts')
@@ -66,6 +71,7 @@ export class AlertsConsumer extends WorkerHost {
       ema200,
       setupDirection,
       rsi,
+      detectedPatterns,
     } = data;
 
     this.logger.log(
@@ -151,6 +157,26 @@ export class AlertsConsumer extends WorkerHost {
           `  - EMA 200: \`$${ema200}\`\n\n` +
           `📊 [View Chart on TradingView](${chartLink})`;
       } else {
+        let patternHeader = '';
+        let patternBody = '';
+        if (detectedPatterns && detectedPatterns.length > 0) {
+          patternHeader = '🌟 *VOLUME & REVERSAL SETUP* 🌟\n\n';
+          patternBody =
+            `*Detected Reversal Patterns*:\n` +
+            detectedPatterns
+              .map((p) => {
+                const dirEmoji =
+                  p.direction === 'LONG'
+                    ? '🟢 🚀'
+                    : p.direction === 'SHORT'
+                      ? '🔴 📉'
+                      : '⏳';
+                return `  • *${p.tf}*: \`${p.pattern}\` (${dirEmoji} ${p.direction || 'Reversal'})`;
+              })
+              .join('\n') +
+            `\n\n`;
+        }
+
         let emaFooter = '';
         if (nearestEmaName && nearestEmaVal !== undefined) {
           const rsiStatus =
@@ -173,12 +199,17 @@ export class AlertsConsumer extends WorkerHost {
             `  - EMA 34: \`$${ema34}\` | EMA 89: \`$${ema89}\` | EMA 200: \`$${ema200}\`\n\n`;
         }
 
+        const title = patternHeader
+          ? `🚨 *[VOLUME & REVERSAL ALERT] ${symbol}* ⚡`
+          : `🚨 *[VOLUME ALERT] ${symbol}* 📊`;
+
         message =
-          `🚨 *[VOLUME ALERT] ${symbol}* 📊\n\n` +
+          `${title}\n\n` +
           `• *Timeframe*: ${timeframe === 'H1' ? '1 Hour' : '24 Hours'}\n` +
           `• *Increase*: *${formattedChange}*\n` +
           `• *Old Volume*: \`${oldValue.toLocaleString(undefined, { maximumFractionDigits: 0 })} USDT\`\n` +
           `• *New Volume*: \`${newValue.toLocaleString(undefined, { maximumFractionDigits: 0 })} USDT\`\n\n` +
+          patternBody +
           emaFooter +
           `📊 [View Chart on TradingView](${chartLink})`;
       }

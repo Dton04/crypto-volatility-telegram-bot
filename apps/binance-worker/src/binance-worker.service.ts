@@ -294,12 +294,34 @@ export class BinanceWorkerService implements OnModuleInit, OnModuleDestroy {
         const cooldownExpiry = this.alertCooldowns.get(cooldownKey) || 0;
 
         if (now > cooldownExpiry) {
+          const timeframes = config.emaTimeframe
+            .split(',')
+            .map((t) => t.trim());
+          const primaryTf = timeframes[0] || '4h';
+
           const emaData = await this.getEmaReversalData(
             symbol,
-            config.emaTimeframe,
+            primaryTf,
             'all',
             false,
           );
+
+          const detectedPatterns = [];
+          for (const tf of timeframes) {
+            const data = await this.getEmaReversalData(
+              symbol,
+              tf,
+              'all',
+              false,
+            );
+            if (data && data.pattern) {
+              detectedPatterns.push({
+                tf: tf.toUpperCase(),
+                pattern: data.pattern,
+                direction: data.setupDirection,
+              });
+            }
+          }
 
           void this.alertsQueue.add('alert-job', {
             userId: config.userId,
@@ -323,6 +345,7 @@ export class BinanceWorkerService implements OnModuleInit, OnModuleDestroy {
             ema89: emaData?.ema89,
             ema200: emaData?.ema200,
             rsi: emaData?.rsi,
+            detectedPatterns,
           });
 
           // Set 1 hour cooldown for daily alerts
