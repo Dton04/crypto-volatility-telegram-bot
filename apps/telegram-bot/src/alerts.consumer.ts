@@ -33,6 +33,14 @@ interface AlertJobData {
     pattern: string;
     direction: string | null;
   }[];
+  isNearSR?: boolean;
+  srType?: 'Support' | 'Resistance' | 'None';
+  srPrice?: number;
+  srDiff?: number;
+  divDetected?: boolean;
+  divType?: 'Regular' | 'None';
+  divPrevRsi?: number;
+  divCurrRsi?: number;
 }
 
 @Processor('telegram-alerts')
@@ -72,6 +80,13 @@ export class AlertsConsumer extends WorkerHost {
       setupDirection,
       rsi,
       detectedPatterns,
+      isNearSR,
+      srType,
+      srPrice,
+      srDiff,
+      divDetected,
+      divPrevRsi,
+      divCurrRsi,
     } = data;
 
     this.logger.log(
@@ -145,12 +160,25 @@ export class AlertsConsumer extends WorkerHost {
             ? `• *RSI*: \`${rsi.toFixed(2)}\` (${rsiStatus})\n`
             : '';
 
+        const srEmoji = srType === 'Support' ? '🛡️' : '🧱';
+        const srLine =
+          isNearSR && srType !== 'None'
+            ? `• *Zone*: ${srEmoji} Near *${srType}* at \`$${srPrice}\` (Diff: \`${srDiff}%\`)\n`
+            : '';
+
+        const divEmoji = setupDirection === 'LONG' ? '🟢 📈' : '🔴 📉';
+        const divLine = divDetected
+          ? `• *Divergence*: ${divEmoji} *RSI ${setupDirection} Divergence* (Prev: \`${divPrevRsi}\` -> Curr: \`${divCurrRsi}\`) 🔥\n`
+          : '';
+
         message =
           `${titleLine}\n\n` +
           setupLine +
           volumeLines +
           `• *Price*: \`$${priceStr}\`\n` +
           rsiLine +
+          srLine +
+          divLine +
           `\n📈 *EMA Status (${tfText})*:\n` +
           `  - EMA 34: \`$${ema34}\`\n` +
           `  - EMA 89: \`$${ema89}\`\n` +
@@ -192,9 +220,22 @@ export class AlertsConsumer extends WorkerHost {
               ? `  - RSI: \`${rsi.toFixed(2)}\` (${rsiStatus})\n`
               : '';
 
+          const srEmoji = srType === 'Support' ? '🛡️' : '🧱';
+          const srLine =
+            isNearSR && srType !== 'None'
+              ? `  - Zone: ${srEmoji} Near *${srType}* at \`$${srPrice}\` (Diff: \`${srDiff}%\`)\n`
+              : '';
+
+          const divEmoji = setupDirection === 'LONG' ? '🟢 📈' : '🔴 📉';
+          const divLine = divDetected
+            ? `  - Divergence: ${divEmoji} *RSI ${setupDirection} Divergence* (Prev: \`${divPrevRsi}\` -> Curr: \`${divCurrRsi}\`) 🔥\n`
+            : '';
+
           emaFooter =
             `📈 *EMA Info (${tfText})*:\n` +
             rsiLine +
+            srLine +
+            divLine +
             `  - Nearest: EMA ${nearestEmaName} (\`$${nearestEmaVal}\`) | Diff: \`${nearestEmaDiff}%\`\n` +
             `  - EMA 34: \`$${ema34}\` | EMA 89: \`$${ema89}\` | EMA 200: \`$${ema200}\`\n\n`;
         }

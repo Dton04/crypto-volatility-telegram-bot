@@ -157,6 +157,15 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
           pattern: string | null;
           trend: string;
           rsi: number;
+          setupDirection: 'LONG' | 'SHORT' | null;
+          isNearSR: boolean;
+          srType: 'Support' | 'Resistance' | 'None';
+          srPrice: number;
+          srDiff: number;
+          divDetected: boolean;
+          divType: 'Regular' | 'None';
+          divPrevRsi: number;
+          divCurrRsi: number;
         }
 
         const getTestInfo = async (tf: string): Promise<TestResult | null> => {
@@ -170,6 +179,8 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
           const data = (await res.json()) as unknown[][];
           if (!Array.isArray(data) || data.length < 200) return null;
 
+          const highs = data.map((k) => parseFloat((k as string[])[2]));
+          const lows = data.map((k) => parseFloat((k as string[])[3]));
           const closes = data.map((k) => parseFloat((k as string[])[4]));
           const currentPrice = closes[closes.length - 1];
 
@@ -182,29 +193,218 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
             return ema;
           };
 
-          const calculateRSI = (prices: number[], period = 14) => {
-            if (prices.length <= period) return 50;
+          const calculateRSIHistory = (
+            closes: number[],
+            period = 14,
+          ): number[] => {
+            const rsiHistory = new Array<number>(closes.length).fill(50);
+            if (closes.length <= period) return rsiHistory;
+
             let gains = 0;
             let losses = 0;
+
             for (let i = 1; i <= period; i++) {
-              const difference = prices[i] - prices[i - 1];
+              const difference = closes[i] - closes[i - 1];
               if (difference > 0) gains += difference;
               else losses -= difference;
             }
+
             let avgGain = gains / period;
             let avgLoss = losses / period;
-            for (let i = period + 1; i < prices.length; i++) {
-              const difference = prices[i] - prices[i - 1];
+
+            if (avgLoss === 0) rsiHistory[period] = 100;
+            else {
+              const rs = avgGain / avgLoss;
+              rsiHistory[period] = parseFloat(
+                (100 - 100 / (1 + rs)).toFixed(2),
+              );
+            }
+
+            for (let i = period + 1; i < closes.length; i++) {
+              const difference = closes[i] - closes[i - 1];
               let currentGain = 0;
               let currentLoss = 0;
               if (difference > 0) currentGain = difference;
               else currentLoss = -difference;
+
               avgGain = (avgGain * (period - 1) + currentGain) / period;
               avgLoss = (avgLoss * (period - 1) + currentLoss) / period;
+
+              if (avgLoss === 0) rsiHistory[i] = 100;
+              else {
+                const rs = avgGain / avgLoss;
+                rsiHistory[i] = parseFloat((100 - 100 / (1 + rs)).toFixed(2));
+              }
             }
-            if (avgLoss === 0) return 100;
-            const rs = avgGain / avgLoss;
-            return parseFloat((100 - 100 / (1 + rs)).toFixed(2));
+
+            return rsiHistory;
+          };
+
+          const detectRSIDivergence = (
+            highs: number[],
+            lows: number[],
+            rsiHistory: number[],
+            direction: 'LONG' | 'SHORT',
+          ): {
+            detected: boolean;
+            type: 'Regular' | 'None';
+            prevRsi: number;
+            currRsi: number;
+          } => {
+            const n = rsiHistory.length;
+            const currIdx = n - 2;
+
+            if (direction === 'LONG') {
+              let p1 = currIdx;
+              for (let i = currIdx - 3; i <= currIdx; i++) {
+                if (lows[i] < lows[p1]) {
+                  p1 = i;
+                }
+              }
+
+              if (p1 < 3)
+                return {
+                  detected: false,
+                  type: 'None',
+                  prevRsi: 0,
+                  currRsi: 0,
+                };
+
+              for (let j = currIdx - 6; j >= Math.max(3, currIdx - 50); j--) {
+                const isLocalMin =
+                  lows[j] <= lows[j - 1] &&
+                  lows[j] <= lows[j - 2] &&
+                  lows[j] <= lows[j - 3] &&
+                  lows[j] <= lows[j + 1] &&
+                  lows[j] <= lows[j + 2] &&
+                  lows[j] <= lows[j + 3];
+
+                if (isLocalMin) {
+                  if (lows[p1] < lows[j] && rsiHistory[p1] > rsiHistory[j]) {
+                    return {
+                      detected: true,
+                      type: 'Regular',
+                      prevRsi: rsiHistory[j],
+                      currRsi: rsiHistory[p1],
+                    };
+                  }
+                }
+              }
+            } else if (direction === 'SHORT') {
+              let p1 = currIdx;
+              for (let i = currIdx - 3; i <= currIdx; i++) {
+                if (highs[i] > highs[p1]) {
+                  p1 = i;
+                }
+              }
+
+              if (p1 < 3)
+                return {
+                  detected: false,
+                  type: 'None',
+                  prevRsi: 0,
+                  currRsi: 0,
+                };
+
+              for (let j = currIdx - 6; j >= Math.max(3, currIdx - 50); j--) {
+                const isLocalMax =
+                  highs[j] >= highs[j - 1] &&
+                  highs[j] >= highs[j - 2] &&
+                  highs[j] >= highs[j - 3] &&
+                  highs[j] >= highs[j + 1] &&
+                  highs[j] >= highs[j + 2] &&
+                  highs[j] >= highs[j + 3];
+
+                if (isLocalMax) {
+                  if (highs[p1] > highs[j] && rsiHistory[p1] < rsiHistory[j]) {
+                    return {
+                      detected: true,
+                      type: 'Regular',
+                      prevRsi: rsiHistory[j],
+                      currRsi: rsiHistory[p1],
+                    };
+                  }
+                }
+              }
+            }
+
+            return { detected: false, type: 'None', prevRsi: 0, currRsi: 0 };
+          };
+
+          const checkSupportResistance = (
+            currentPrice: number,
+            highs: number[],
+            lows: number[],
+          ): {
+            isNearCản: boolean;
+            type: 'Support' | 'Resistance' | 'None';
+            levelPrice: number;
+            diffPercent: number;
+          } => {
+            const n = highs.length;
+            const levels: { price: number; type: 'Support' | 'Resistance' }[] =
+              [];
+
+            for (let i = 10; i < n - 5; i++) {
+              const isLow =
+                lows[i] <= lows[i - 1] &&
+                lows[i] <= lows[i - 2] &&
+                lows[i] <= lows[i - 3] &&
+                lows[i] <= lows[i - 4] &&
+                lows[i] <= lows[i - 5] &&
+                lows[i] <= lows[i + 1] &&
+                lows[i] <= lows[i + 2] &&
+                lows[i] <= lows[i + 3] &&
+                lows[i] <= lows[i + 4] &&
+                lows[i] <= lows[i + 5];
+
+              if (isLow) {
+                levels.push({ price: lows[i], type: 'Support' });
+              }
+
+              const isHigh =
+                highs[i] >= highs[i - 1] &&
+                highs[i] >= highs[i - 2] &&
+                highs[i] >= highs[i - 3] &&
+                highs[i] >= highs[i - 4] &&
+                highs[i] >= highs[i - 5] &&
+                highs[i] >= highs[i + 1] &&
+                highs[i] >= highs[i + 2] &&
+                highs[i] >= highs[i + 3] &&
+                highs[i] >= highs[i + 4] &&
+                highs[i] >= highs[i + 5];
+
+              if (isHigh) {
+                levels.push({ price: highs[i], type: 'Resistance' });
+              }
+            }
+
+            let closestLevel = null;
+            let minDiff = Infinity;
+
+            for (const lvl of levels) {
+              const diff = Math.abs(currentPrice - lvl.price) / lvl.price;
+              if (diff < minDiff) {
+                minDiff = diff;
+                closestLevel = lvl;
+              }
+            }
+
+            if (closestLevel && minDiff <= 0.015) {
+              return {
+                isNearCản: true,
+                type: closestLevel.type,
+                levelPrice: parseFloat(closestLevel.price.toFixed(4)),
+                diffPercent: parseFloat((minDiff * 100).toFixed(2)),
+              };
+            }
+
+            return {
+              isNearCản: false,
+              type: 'None',
+              levelPrice: 0,
+              diffPercent: 0,
+            };
           };
 
           const ema34 = calculateEMA(closes, 34);
@@ -285,6 +485,42 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
           if (isBullishTrend) trend = 'Bullish 🟢';
           if (isBearishTrend) trend = 'Bearish 🔴';
 
+          const rsiHistory = calculateRSIHistory(closes, 14);
+          const rsi = rsiHistory[rsiHistory.length - 1];
+
+          let setupDirection: 'LONG' | 'SHORT' | null = null;
+          if (pattern) {
+            if (pattern.startsWith('Bullish')) {
+              setupDirection = 'LONG';
+            } else if (pattern.startsWith('Bearish')) {
+              setupDirection = 'SHORT';
+            } else if (pattern === 'Doji ⏳') {
+              if (isBullishTrend) setupDirection = 'LONG';
+              else if (isBearishTrend) setupDirection = 'SHORT';
+            }
+          }
+
+          const srData = checkSupportResistance(currentPrice, highs, lows);
+          let divData: {
+            detected: boolean;
+            type: 'Regular' | 'None';
+            prevRsi: number;
+            currRsi: number;
+          } = {
+            detected: false,
+            type: 'None',
+            prevRsi: 0,
+            currRsi: 0,
+          };
+          if (setupDirection) {
+            divData = detectRSIDivergence(
+              highs,
+              lows,
+              rsiHistory,
+              setupDirection,
+            );
+          }
+
           return {
             currentPrice,
             ema34,
@@ -295,7 +531,16 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
             touch200,
             pattern,
             trend,
-            rsi: calculateRSI(closes, 14),
+            rsi,
+            setupDirection,
+            isNearSR: srData.isNearCản,
+            srType: srData.type,
+            srPrice: srData.levelPrice,
+            srDiff: srData.diffPercent,
+            divDetected: divData.detected,
+            divType: divData.type,
+            divPrevRsi: divData.prevRsi,
+            divCurrRsi: divData.currRsi,
           };
         };
 
@@ -326,12 +571,25 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
                 ? 'Overbought 🔴 (Quá Mua)'
                 : 'Neutral ⚪';
 
+          const srEmoji = res.srType === 'Support' ? '🛡️' : '🧱';
+          const srLine =
+            res.isNearSR && res.srType !== 'None'
+              ? `  • Zone: ${srEmoji} Near *${res.srType}* at \`$${res.srPrice}\` (Diff: \`${res.srDiff}%\`)\n`
+              : '';
+
+          const divEmoji = res.setupDirection === 'LONG' ? '🟢 📈' : '🔴 📉';
+          const divLine = res.divDetected
+            ? `  • Divergence: ${divEmoji} *RSI ${res.setupDirection} Divergence* (Prev: \`${res.divPrevRsi}\` -> Curr: \`${res.divCurrRsi}\`) 🔥\n`
+            : '';
+
           return (
             `*${tfName}*:\n` +
             `  • Price: \`$${res.currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}\`\n` +
             `  • Trend: ${res.trend}\n` +
             `  • Pattern: \`${res.pattern || 'None'}\`\n` +
             `  • RSI: \`${res.rsi.toFixed(2)}\` (${rsiStatus})\n` +
+            srLine +
+            divLine +
             `  • EMA Touches: ${touchStrs.join(', ') || 'None'}\n` +
             `  • EMAs: 34: \`$${res.ema34.toLocaleString(undefined, { maximumFractionDigits: 4 })}\` | 89: \`$${res.ema89.toLocaleString(undefined, { maximumFractionDigits: 4 })}\` | 200: \`$${res.ema200.toLocaleString(undefined, { maximumFractionDigits: 4 })}\`\n`
           );
