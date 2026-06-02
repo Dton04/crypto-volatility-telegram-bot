@@ -1,98 +1,109 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# TeleCryp 🤖📈
+> **Hệ thống giám sát thị trường Binance & Cảnh báo lệnh Futures tự động thời gian thực.**
+> **Tác giả:** Tấn Đạt (Tan Dat)
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+---
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## 🌟 Giới Thiệu
+**TeleCryp** là một hệ thống microservice hiện đại được thiết kế để phân tích kỹ thuật, giám sát độ biến động volume/giá và đưa ra cảnh báo giao dịch (Trading Signals) tự động gửi đến người dùng qua Telegram. 
 
-## Description
+Hệ thống theo dõi liên tục hơn **400+ cặp giao dịch** trên sàn Binance qua kết nối WebSocket thời gian thực, tự động tính toán các tín hiệu kỹ thuật nâng cao và đề xuất các điểm vào lệnh (Entry), chặn lỗ (Stop Loss) và chốt lời (Take Profit) thông minh dựa trên phương pháp **Smart Money Concepts (SMC)** và hành vi giá.
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+---
 
-## Project setup
+## 🚀 Tính Năng Nổi Bật
 
-```bash
-$ npm install
+### 1. Phân Tích & Xác Nhận SMC Đa Khung Thời Gian (CHoCH)
+Hệ thống không chỉ đưa ra cảnh báo thô mà còn tự động liên kết đa khung thời gian để tìm điểm xoay cấu trúc thị trường (**CHoCH - Change of Character** / phá vỡ swing point gần nhất) trên khung thời gian nhỏ (LTF) khi khung thời gian lớn (HTF) có tín hiệu:
+*   **1 Ngày (1D)** $\rightarrow$ Xác nhận ở **1 Giờ (1H)**
+*   **4 Giờ (4H)** $\rightarrow$ Xác nhận ở **15 Phút (15m)**
+*   **1 Giờ (1H)** $\rightarrow$ Xác nhận ở **5 Phút (5m)**
+
+### 2. Thiết Lập Điểm SL/TP Tự Động Theo Râu Nến (Pattern-Aware SL)
+*   **Stop Loss Động:** Nếu phát hiện các mô hình nến đảo chiều (Bullish Hammer, Engulfing, Shooting Star,...), Bot tự động tính toán điểm SL nằm ngoài râu nến xa nhất của mô hình kèm biên an toàn 0.8% để tránh các pha quét thanh khoản (Stop Hunt).
+*   **Take Profit Động:** Xuất ra 2 mức chốt lời **TP1 (R:R 1:1.5)** và **TP2 (R:R 1:2.5)** dựa trên biên độ dừng lỗ thực tế.
+
+### 3. Tín Hiệu 2 Lựa Chọn (Dual-Entry Format)
+Mỗi tin nhắn cảnh báo gửi về Telegram hoặc khi sử dụng lệnh giả lập `/test <symbol>` đều cung cấp:
+*   **Option 1: Direct Entry (Aggressive):** Vào lệnh trực tiếp ngay khi nến HTF đóng cửa.
+*   **Option 2: SMC Confirmation (Safe):** Chờ đợi nến LTF đóng cửa xác nhận phá vỡ CHoCH kèm mức SL cực kỳ tối ưu theo cấu trúc khung nhỏ giúp tăng đòn bẩy và nâng cao tỷ lệ R:R.
+
+### 4. Thuật Toán Cắt Giảm Giao Thức Đĩa (RAM-based Sliding Window)
+*   Sử dụng cơ chế lưu trữ đệm sliding window trực tiếp trên bộ nhớ RAM để phân tích khối lượng giao dịch trong 1h/24h, giúp **giảm 99% lượng I/O đọc/ghi** vào database.
+
+---
+
+## 🛠️ Công Nghệ Sử Dụng (Tech Stack)
+*   **Core:** TypeScript, NestJS (Modular Architecture), RxJS
+*   **Database & ORM:** PostgreSQL, Prisma ORM
+*   **Caching & Queue:** Redis, BullMQ (Quản lý hàng đợi tin nhắn cảnh báo bất đồng bộ)
+*   **Telegram Library:** Telegraf (Telegram Bot API framework)
+*   **API & Streams:** Binance API & Binance WebSocket Live Feed
+*   **DevOps:** Docker, Docker Compose
+
+---
+
+## 📂 Cấu Trúc Mã Nguồn (Modular Architecture)
+Hệ thống được thiết kế theo mô hình Monorepo chia làm hai microservice chính và một thư viện dùng chung:
+
+```
+├── apps/
+│   ├── binance-worker/           # Service chịu trách nhiệm lắng nghe WebSocket, quét Klines & chạy chỉ báo kỹ thuật
+│   │   └── src/
+│   │       ├── indicators/       # Dịch vụ tính toán kỹ thuật thuần túy (EMA, RSI, Divergence, CHoCH, SR)
+│   │       └── scanner/          # Quét dữ liệu thị trường và đẩy job cảnh báo vào hàng đợi BullMQ
+│   └── telegram-bot/             # Service quản trị Telegram Bot, tiếp nhận tương tác & tiêu thụ hàng đợi gửi tin nhắn
+│       └── src/
+│           ├── alerts/           # Consumer xử lý tin nhắn cảnh báo từ Queue và định dạng gửi đi
+│           ├── settings/         # Quản trị cấu hình bật/tắt chỉ báo của người dùng
+│           ├── test-command/     # Lệnh mô phỏng giao dịch tại chỗ (/test <symbol>)
+│           └── user/             # Quản lý định danh người dùng
+└── libs/
+    └── database/                 # Thư viện Prisma ORM & Database kết nối PostgreSQL dùng chung
 ```
 
-## Compile and run the project
+---
 
-```bash
-# development
-$ npm run start
+## ⚙️ Hướng Dẫn Cài Đặt & Chạy Hệ Thống
 
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+### 1. Chuẩn Bị File Cấu Hình `.env`
+Tạo file `.env` ở thư mục gốc của dự án với các thông tin sau:
+```env
+DATABASE_URL="postgresql://username:password@localhost:5432/telecryp?schema=public"
+REDIS_URL="redis://localhost:6379"
+TELEGRAM_BOT_TOKEN="your_telegram_bot_token"
 ```
 
-## Run tests
-
+### 2. Cài Đặt Thư Viện & Khởi Tạo Cơ Sở Dữ Liệu
 ```bash
-# unit tests
-$ npm run test
+# Cài đặt dependencies
+npm install
 
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+# Đồng bộ Prisma ORM với Database
+npx prisma db push
+npx prisma generate
 ```
 
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
+### 3. Khởi Chạy Ứng Dụng Trong Môi Trường Phát Triển
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+# Chạy Telegram Bot ở chế độ Watch Mode
+npm run start:dev telegram-bot
+
+# Chạy Binance Worker ở chế độ Watch Mode
+npm run start:dev binance-worker
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+### 4. Khởi Chạy Toàn Bộ Hệ Thống Với Docker Compose
+```bash
+docker-compose up -d --build
+```
 
-## Resources
+### 5. Chạy Kiểm Thử (Unit Tests)
+```bash
+npm run test
+```
 
-Check out a few resources that may come in handy when working with NestJS:
+---
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+## 📃 Giấy Phép & Bản Quyền
+Dự án được phân phối dưới giấy phép **MIT**. Mọi đóng góp xin vui lòng gửi Pull Request hoặc liên hệ trực tiếp với tác giả **Tấn Đạt**.
