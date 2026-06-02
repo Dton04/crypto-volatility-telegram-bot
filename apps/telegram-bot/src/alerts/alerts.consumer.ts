@@ -45,6 +45,12 @@ interface AlertJobData {
   openInterestValue?: number | null;
   patternLow?: number;
   patternHigh?: number;
+  ltfConfirmed?: boolean;
+  ltfTimeframeName?: string;
+  ltfBreakPrice?: number;
+  ltfSwingPrice?: number;
+  ltfLastSwingLow?: number;
+  ltfLastSwingHigh?: number;
 }
 
 @Processor('telegram-alerts')
@@ -95,6 +101,11 @@ export class AlertsConsumer extends WorkerHost {
       openInterestValue,
       patternLow,
       patternHigh,
+      ltfConfirmed,
+      ltfTimeframeName,
+      ltfSwingPrice,
+      ltfLastSwingLow,
+      ltfLastSwingHigh,
     } = data;
 
     const formatOI = (val?: number | null) => {
@@ -241,13 +252,51 @@ export class AlertsConsumer extends WorkerHost {
             maximumFractionDigits: 4,
           });
 
+        // Calculate safe/SMC option
+        let ltfTextLine = '';
+        if (setupDirection && entryPrice > 0 && ltfTimeframeName) {
+          let smcTriggerVal = 0;
+          let smcSlVal = 0;
+          let smcTp1Val = 0;
+          let smcTp2Val = 0;
+
+          if (setupDirection === 'LONG') {
+            smcTriggerVal = ltfLastSwingHigh || ltfSwingPrice || entryPrice;
+            smcSlVal = ltfLastSwingLow
+              ? ltfLastSwingLow * 0.996
+              : entryPrice * 0.992;
+            const smcRisk = entryPrice - smcSlVal;
+            smcTp1Val = entryPrice + smcRisk * 1.5;
+            smcTp2Val = entryPrice + smcRisk * 2.5;
+          } else {
+            smcTriggerVal = ltfLastSwingLow || ltfSwingPrice || entryPrice;
+            smcSlVal = ltfLastSwingHigh
+              ? ltfLastSwingHigh * 1.004
+              : entryPrice * 1.008;
+            const smcRisk = smcSlVal - entryPrice;
+            smcTp1Val = entryPrice - smcRisk * 1.5;
+            smcTp2Val = entryPrice - smcRisk * 2.5;
+          }
+
+          const statusEmoji = ltfConfirmed ? '🟢 (CONFIRMED)' : '⏳ (PENDING)';
+
+          ltfTextLine =
+            `🛡️ *Option 2: SMC Confirmation (Safe)*\n` +
+            `  - Status: ${statusEmoji}\n` +
+            `  - Wait for \`${ltfTimeframeName}\` ${setupDirection === 'LONG' ? 'Bullish' : 'Bearish'} CHoCH\n` +
+            `  - Trigger: ${setupDirection === 'LONG' ? 'Close above Swing High' : 'Close below Swing Low'} \`$${formatPrice(smcTriggerVal)}\`\n` +
+            `  - Estimated SL: \`$${formatPrice(smcSlVal)}\` (Risk: \`${Math.abs(((entryPrice - smcSlVal) / entryPrice) * 100).toFixed(2)}%\`)\n` +
+            `  - Estimated TP1 / TP2: \`$${formatPrice(smcTp1Val)}\` / \`$${formatPrice(smcTp2Val)}\` (RR 1:1.5 / 1:2.5)\n`;
+        }
+
         const tradingIdeaLine =
           setupDirection && entryPrice > 0
-            ? `\n💡 *Trading Signal Idea (Futures):*\n` +
+            ? `\n💡 *Trading Signals (Futures):*\n\n` +
+              `🚀 *Option 1: Direct Entry (Aggressive)*\n` +
               `  - 📥 *Entry*: \`$${formatPrice(entryPrice)}\` (Current Price)\n` +
               `  - 🛑 *Stop Loss (SL)*: \`$${formatPrice(slVal)}\` (Risk: \`${Math.abs(((entryPrice - slVal) / entryPrice) * 100).toFixed(2)}%\`)\n` +
-              `  - 🎯 *Take Profit 1 (TP1)*: \`$${formatPrice(tp1Val)}\` (R:R 1:1.5)\n` +
-              `  - 🎯 *Take Profit 2 (TP2)*: \`$${formatPrice(tp2Val)}\` (R:R 1:2.5)\n`
+              `  - 🎯 *TP1 / TP2*: \`$${formatPrice(tp1Val)}\` / \`$${formatPrice(tp2Val)}\` (RR 1:1.5 / 1:2.5)\n\n` +
+              (ltfTextLine ? ltfTextLine : '')
             : '';
 
         message =

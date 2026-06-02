@@ -25,6 +25,12 @@ interface TestResult {
   openInterestValue: number | null;
   patternLow?: number;
   patternHigh?: number;
+  ltfConfirmed?: boolean;
+  ltfTimeframeName?: string;
+  ltfBreakPrice?: number;
+  ltfSwingPrice?: number;
+  ltfLastSwingLow?: number;
+  ltfLastSwingHigh?: number;
 }
 
 @Injectable()
@@ -99,6 +105,69 @@ export class TelegramTestService {
           } catch {
             // Safe to ignore
           }
+
+          const checkLTFConfirmation = (
+            klines: unknown[][],
+            direction: 'LONG' | 'SHORT',
+          ) => {
+            if (klines.length < 20) return { confirmed: false };
+
+            const n = klines.length;
+            const highs = klines.map((k) => parseFloat((k as string[])[2]));
+            const lows = klines.map((k) => parseFloat((k as string[])[3]));
+            const closes = klines.map((k) => parseFloat((k as string[])[4]));
+            const currentPrice = closes[n - 1];
+
+            let lastSwingHigh = 0;
+            let lastSwingLow = 0;
+
+            // Find the most recent Swing High (excluding the last 2 candles for stability)
+            for (let i = n - 5; i >= 5; i--) {
+              const isSwingHigh =
+                highs[i] >= highs[i - 1] &&
+                highs[i] >= highs[i - 2] &&
+                highs[i] >= highs[i + 1] &&
+                highs[i] >= highs[i + 2];
+              if (isSwingHigh) {
+                lastSwingHigh = highs[i];
+                break;
+              }
+            }
+
+            // Find the most recent Swing Low (excluding the last 2 candles for stability)
+            for (let i = n - 5; i >= 5; i--) {
+              const isSwingLow =
+                lows[i] <= lows[i - 1] &&
+                lows[i] <= lows[i - 2] &&
+                lows[i] <= lows[i + 1] &&
+                lows[i] <= lows[i + 2];
+              if (isSwingLow) {
+                lastSwingLow = lows[i];
+                break;
+              }
+            }
+
+            if (direction === 'LONG') {
+              const confirmed =
+                lastSwingHigh > 0 && currentPrice > lastSwingHigh;
+              return {
+                confirmed,
+                breakPrice: currentPrice,
+                swingPrice: lastSwingHigh,
+                lastSwingLow,
+                lastSwingHigh,
+              };
+            } else {
+              const confirmed = lastSwingLow > 0 && currentPrice < lastSwingLow;
+              return {
+                confirmed,
+                breakPrice: currentPrice,
+                swingPrice: lastSwingLow,
+                lastSwingLow,
+                lastSwingHigh,
+              };
+            }
+          };
 
           const calculateEMA = (prices: number[], period: number) => {
             const k = 2 / (period + 1);
@@ -452,6 +521,47 @@ export class TelegramTestService {
             );
           }
 
+          let ltfConfirmed = false;
+          let ltfTimeframeName = '';
+          let ltfBreakPrice = 0;
+          let ltfSwingPrice = 0;
+          let ltfLastSwingLow = 0;
+          let ltfLastSwingHigh = 0;
+
+          if (setupDirection) {
+            let ltfInterval = '';
+            if (tfName === '1d') {
+              ltfInterval = '1h';
+              ltfTimeframeName = 'H1';
+            } else if (tfName === '4h') {
+              ltfInterval = '15m';
+              ltfTimeframeName = 'M15';
+            } else if (tfName === '1h') {
+              ltfInterval = '5m';
+              ltfTimeframeName = 'M5';
+            }
+
+            if (ltfInterval) {
+              try {
+                const ltfUrl = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${ltfInterval}&limit=100`;
+                const ltfRes = await fetch(ltfUrl);
+                if (ltfRes.ok) {
+                  const ltfData = (await ltfRes.json()) as unknown[][];
+                  if (Array.isArray(ltfData) && ltfData.length >= 20) {
+                    const conf = checkLTFConfirmation(ltfData, setupDirection);
+                    ltfConfirmed = conf.confirmed;
+                    ltfBreakPrice = conf.breakPrice || 0;
+                    ltfSwingPrice = conf.swingPrice || 0;
+                    ltfLastSwingLow = conf.lastSwingLow || 0;
+                    ltfLastSwingHigh = conf.lastSwingHigh || 0;
+                  }
+                }
+              } catch {
+                // Ignore
+              }
+            }
+          }
+
           return {
             currentPrice,
             ema34,
@@ -476,6 +586,12 @@ export class TelegramTestService {
             openInterestValue,
             patternLow,
             patternHigh,
+            ltfConfirmed,
+            ltfTimeframeName,
+            ltfBreakPrice,
+            ltfSwingPrice,
+            ltfLastSwingLow,
+            ltfLastSwingHigh,
           };
         } catch (e) {
           this.logger.error(`Error in getTestInfo for ${tfName}:`, e);
@@ -590,13 +706,55 @@ export class TelegramTestService {
             maximumFractionDigits: 4,
           });
 
+        // Calculate safe/SMC option
+        let ltfTextLine = '';
+        if (res.setupDirection && entryPrice > 0 && res.ltfTimeframeName) {
+          let smcTriggerVal = 0;
+          let smcSlVal = 0;
+          let smcTp1Val = 0;
+          let smcTp2Val = 0;
+
+          if (res.setupDirection === 'LONG') {
+            smcTriggerVal =
+              res.ltfLastSwingHigh || res.ltfSwingPrice || entryPrice;
+            smcSlVal = res.ltfLastSwingLow
+              ? res.ltfLastSwingLow * 0.996
+              : entryPrice * 0.992;
+            const smcRisk = entryPrice - smcSlVal;
+            smcTp1Val = entryPrice + smcRisk * 1.5;
+            smcTp2Val = entryPrice + smcRisk * 2.5;
+          } else {
+            smcTriggerVal =
+              res.ltfLastSwingLow || res.ltfSwingPrice || entryPrice;
+            smcSlVal = res.ltfLastSwingHigh
+              ? res.ltfLastSwingHigh * 1.004
+              : entryPrice * 1.008;
+            const smcRisk = smcSlVal - entryPrice;
+            smcTp1Val = entryPrice - smcRisk * 1.5;
+            smcTp2Val = entryPrice - smcRisk * 2.5;
+          }
+
+          const statusEmoji = res.ltfConfirmed
+            ? '🟢 (CONFIRMED)'
+            : '⏳ (PENDING)';
+
+          ltfTextLine =
+            `    - 🛡️ *Option 2: SMC Confirmation*\n` +
+            `      - Status: ${statusEmoji}\n` +
+            `      - Wait for \`${res.ltfTimeframeName}\` ${res.setupDirection === 'LONG' ? 'Bullish' : 'Bearish'} CHoCH\n` +
+            `      - Trigger: ${res.setupDirection === 'LONG' ? 'Close above Swing High' : 'Close below Swing Low'} \`$${formatVal(smcTriggerVal)}\`\n` +
+            `      - Estimated SL: \`$${formatVal(smcSlVal)}\` (Risk: \`${Math.abs(((entryPrice - smcSlVal) / entryPrice) * 100).toFixed(2)}%\`)\n` +
+            `      - Estimated TP1 / TP2: \`$${formatVal(smcTp1Val)}\` / \`$${formatVal(smcTp2Val)}\` (RR 1:1.5 / 1:2.5)\n`;
+        }
+
         const tradingIdeaLine =
           res.setupDirection && entryPrice > 0
-            ? `  • *Trading Idea (Futures)*:\n` +
-              `    - 📥 *Entry*: \`$${formatVal(entryPrice)}\` (Current)\n` +
-              `    - 🛑 *SL*: \`$${formatVal(slVal)}\` (Risk: \`${Math.abs(((entryPrice - slVal) / entryPrice) * 100).toFixed(2)}%\`)\n` +
-              `    - 🎯 *TP1*: \`$${formatVal(tp1Val)}\` (RR 1:1.5)\n` +
-              `    - 🎯 *TP2*: \`$${formatVal(tp2Val)}\` (RR 1:2.5)\n`
+            ? `  • *Trading Signals (Futures)*:\n` +
+              `    - 🚀 *Option 1: Direct Entry (Aggressive)*\n` +
+              `      - Entry: \`$${formatVal(entryPrice)}\` (Current)\n` +
+              `      - SL: \`$${formatVal(slVal)}\` (Risk: \`${Math.abs(((entryPrice - slVal) / entryPrice) * 100).toFixed(2)}%\`)\n` +
+              `      - TP1 / TP2: \`$${formatVal(tp1Val)}\` / \`$${formatVal(tp2Val)}\` (RR 1:1.5 / 1:2.5)\n` +
+              (ltfTextLine ? ltfTextLine : '')
             : '';
 
         return (

@@ -266,4 +266,72 @@ export class TechnicalIndicatorsService {
 
     return null;
   }
+
+  checkLTFConfirmation(
+    klines: unknown[][],
+    direction: 'LONG' | 'SHORT',
+  ): {
+    confirmed: boolean;
+    breakPrice?: number;
+    swingPrice?: number;
+    lastSwingLow?: number;
+    lastSwingHigh?: number;
+  } {
+    if (klines.length < 20) return { confirmed: false };
+
+    const n = klines.length;
+    const highs = klines.map((k) => parseFloat((k as string[])[2]));
+    const lows = klines.map((k) => parseFloat((k as string[])[3]));
+    const closes = klines.map((k) => parseFloat((k as string[])[4]));
+    const currentPrice = closes[n - 1];
+
+    let lastSwingHigh = 0;
+    let lastSwingLow = 0;
+
+    // Find the most recent Swing High (excluding the last 2 candles for stability)
+    for (let i = n - 5; i >= 5; i--) {
+      const isSwingHigh =
+        highs[i] >= highs[i - 1] &&
+        highs[i] >= highs[i - 2] &&
+        highs[i] >= highs[i + 1] &&
+        highs[i] >= highs[i + 2];
+      if (isSwingHigh) {
+        lastSwingHigh = highs[i];
+        break;
+      }
+    }
+
+    // Find the most recent Swing Low (excluding the last 2 candles for stability)
+    for (let i = n - 5; i >= 5; i--) {
+      const isSwingLow =
+        lows[i] <= lows[i - 1] &&
+        lows[i] <= lows[i - 2] &&
+        lows[i] <= lows[i + 1] &&
+        lows[i] <= lows[i + 2];
+      if (isSwingLow) {
+        lastSwingLow = lows[i];
+        break;
+      }
+    }
+
+    if (direction === 'LONG') {
+      const confirmed = lastSwingHigh > 0 && currentPrice > lastSwingHigh;
+      return {
+        confirmed,
+        breakPrice: currentPrice,
+        swingPrice: lastSwingHigh,
+        lastSwingLow,
+        lastSwingHigh,
+      };
+    } else {
+      const confirmed = lastSwingLow > 0 && currentPrice < lastSwingLow;
+      return {
+        confirmed,
+        breakPrice: currentPrice,
+        swingPrice: lastSwingLow,
+        lastSwingLow,
+        lastSwingHigh,
+      };
+    }
+  }
 }

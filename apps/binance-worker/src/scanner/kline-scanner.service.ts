@@ -228,6 +228,52 @@ export class KlineScannerService {
         }
       }
 
+      let ltfConfirmed = false;
+      let ltfTimeframeName = '';
+      let ltfBreakPrice = 0;
+      let ltfSwingPrice = 0;
+      let ltfLastSwingLow = 0;
+      let ltfLastSwingHigh = 0;
+
+      if (setupDirection) {
+        let ltfInterval = '';
+        if (timeframe === '1d') {
+          ltfInterval = '1h';
+          ltfTimeframeName = 'H1';
+        } else if (timeframe === '4h') {
+          ltfInterval = '15m';
+          ltfTimeframeName = 'M15';
+        } else if (timeframe === '1h') {
+          ltfInterval = '5m';
+          ltfTimeframeName = 'M5';
+        }
+
+        if (ltfInterval) {
+          try {
+            const ltfUrl = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${ltfInterval}&limit=100`;
+            const ltfRes = await fetch(ltfUrl);
+            if (ltfRes.ok) {
+              const ltfData = (await ltfRes.json()) as unknown[][];
+              if (Array.isArray(ltfData) && ltfData.length >= 20) {
+                const conf = this.indicatorsService.checkLTFConfirmation(
+                  ltfData,
+                  setupDirection,
+                );
+                ltfConfirmed = conf.confirmed;
+                ltfBreakPrice = conf.breakPrice || 0;
+                ltfSwingPrice = conf.swingPrice || 0;
+                ltfLastSwingLow = conf.lastSwingLow || 0;
+                ltfLastSwingHigh = conf.lastSwingHigh || 0;
+              }
+            }
+          } catch (err) {
+            this.logger.debug(
+              `Failed to fetch LTF confirmation klines for ${symbol}: ${err}`,
+            );
+          }
+        }
+      }
+
       return {
         currentPrice,
         touchEma,
@@ -237,6 +283,12 @@ export class KlineScannerService {
         patternLow,
         patternHigh,
         setupDirection,
+        ltfConfirmed,
+        ltfTimeframeName,
+        ltfBreakPrice,
+        ltfSwingPrice,
+        ltfLastSwingLow,
+        ltfLastSwingHigh,
         nearestEmaName: nearest.name,
         nearestEmaVal: nearest.val,
         nearestEmaDiff: nearest.diff,
@@ -358,6 +410,12 @@ export class KlineScannerService {
             openInterestValue: emaData?.openInterestValue,
             patternLow: emaData?.patternLow || 0,
             patternHigh: emaData?.patternHigh || 0,
+            ltfConfirmed: emaData?.ltfConfirmed || false,
+            ltfTimeframeName: emaData?.ltfTimeframeName || '',
+            ltfBreakPrice: emaData?.ltfBreakPrice || 0,
+            ltfSwingPrice: emaData?.ltfSwingPrice || 0,
+            ltfLastSwingLow: emaData?.ltfLastSwingLow || 0,
+            ltfLastSwingHigh: emaData?.ltfLastSwingHigh || 0,
           });
 
           // Set 1 hour cooldown for daily alerts
@@ -536,6 +594,12 @@ export class KlineScannerService {
               openInterestValue: emaData.openInterestValue,
               patternLow: emaData.patternLow || 0,
               patternHigh: emaData.patternHigh || 0,
+              ltfConfirmed: emaData.ltfConfirmed || false,
+              ltfTimeframeName: emaData.ltfTimeframeName || '',
+              ltfBreakPrice: emaData.ltfBreakPrice || 0,
+              ltfSwingPrice: emaData.ltfSwingPrice || 0,
+              ltfLastSwingLow: emaData.ltfLastSwingLow || 0,
+              ltfLastSwingHigh: emaData.ltfLastSwingHigh || 0,
             });
 
             // Set 2 hours cooldown
