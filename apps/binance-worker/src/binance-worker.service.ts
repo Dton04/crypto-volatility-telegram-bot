@@ -920,7 +920,12 @@ export class BinanceWorkerService implements OnModuleInit, OnModuleDestroy {
           let emaName: string | null = null;
           let touchDiff: number | null = null;
 
-          if (config.emaTarget === 'none') {
+          const targetEmas = config.emaTarget
+            .split(',')
+            .map((s) => s.trim().toLowerCase())
+            .filter(Boolean);
+
+          if (targetEmas.includes('none')) {
             // Candle only mode: does not require touchEma to be non-null,
             // but we still pass the touch info if it happened to touch!
             touchEma = emaData.touchEma;
@@ -932,8 +937,8 @@ export class BinanceWorkerService implements OnModuleInit, OnModuleDestroy {
               continue;
             }
             if (
-              config.emaTarget !== 'all' &&
-              emaData.emaName !== config.emaTarget
+              !targetEmas.includes('all') &&
+              !targetEmas.includes(emaData.emaName || '')
             ) {
               continue;
             }

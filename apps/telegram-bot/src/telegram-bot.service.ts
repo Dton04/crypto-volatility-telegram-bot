@@ -821,19 +821,39 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
           });
         } else if (callbackData === 'menu_target_ema') {
           await ctx.answerCbQuery();
+          const selected = config.emaTarget
+            .split(',')
+            .map((s) => s.trim().toLowerCase())
+            .filter(Boolean);
+          const is34 = selected.includes('34');
+          const is89 = selected.includes('89');
+          const is200 = selected.includes('200');
+          const isNone = selected.includes('none');
+
           const keyboard = Markup.inlineKeyboard([
             [
-              Markup.button.callback('All EMAs', 'target_set_all'),
-              Markup.button.callback('EMA 34', 'target_set_34'),
+              Markup.button.callback(
+                is34 ? '✅ EMA 34' : '⬜️ EMA 34',
+                'target_toggle_34',
+              ),
+              Markup.button.callback(
+                is89 ? '✅ EMA 89' : '⬜️ EMA 89',
+                'target_toggle_89',
+              ),
             ],
             [
-              Markup.button.callback('EMA 89', 'target_set_89'),
-              Markup.button.callback('EMA 200', 'target_set_200'),
+              Markup.button.callback(
+                is200 ? '✅ EMA 200' : '⬜️ EMA 200',
+                'target_toggle_200',
+              ),
+              Markup.button.callback(
+                isNone ? '✅ None (Candle Only)' : '⬜️ None (Candle Only)',
+                'target_toggle_none',
+              ),
             ],
-            [Markup.button.callback('None (Candle Only)', 'target_set_none')],
             [Markup.button.callback('◀️ Back', 'back_to_settings')],
           ]);
-          await ctx.editMessageText('🎯 *Select Target EMA Touch:*', {
+          await ctx.editMessageText('🎯 *Select Target EMA Touch(es):*', {
             parse_mode: 'Markdown',
             reply_markup: keyboard.reply_markup,
           });
@@ -950,21 +970,78 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
             parse_mode: 'Markdown',
             reply_markup: keyboard.reply_markup,
           });
-        } else if (callbackData.startsWith('target_set_')) {
-          const val = callbackData.replace('target_set_', '');
-          const updated = await this.databaseService.alertsConfig.update({
+        } else if (callbackData.startsWith('target_toggle_')) {
+          const toggled = callbackData.replace('target_toggle_', '');
+          let newTarget = '';
+
+          if (toggled === 'none') {
+            newTarget = 'none';
+          } else {
+            let currentTargets: string[] = [];
+            if (config.emaTarget === 'all') {
+              currentTargets = ['34', '89', '200'];
+            } else if (config.emaTarget !== 'none') {
+              currentTargets = config.emaTarget
+                .split(',')
+                .map((s) => s.trim().toLowerCase())
+                .filter(Boolean);
+            }
+
+            if (currentTargets.includes(toggled)) {
+              currentTargets = currentTargets.filter((t) => t !== toggled);
+            } else {
+              currentTargets.push(toggled);
+            }
+
+            // Remove none if checking an EMA
+            currentTargets = currentTargets.filter((t) => t !== 'none');
+
+            if (currentTargets.length === 0) {
+              newTarget = 'none';
+            } else {
+              newTarget = currentTargets.join(',');
+            }
+          }
+
+          await this.databaseService.alertsConfig.update({
             where: { id: config.id },
-            data: { emaTarget: val },
+            data: { emaTarget: newTarget },
           });
-          const label =
-            val === 'all'
-              ? 'All'
-              : val === 'none'
-                ? 'None (Candle Only)'
-                : `EMA ${val}`;
-          await ctx.answerCbQuery(`Target EMA: ${label}`);
-          const { text, keyboard } = this.renderSettingsMenu(updated);
-          await ctx.editMessageText(text, {
+
+          await ctx.answerCbQuery();
+          const selected = newTarget
+            .split(',')
+            .map((s) => s.trim().toLowerCase())
+            .filter(Boolean);
+          const is34 = selected.includes('34');
+          const is89 = selected.includes('89');
+          const is200 = selected.includes('200');
+          const isNone = selected.includes('none');
+
+          const keyboard = Markup.inlineKeyboard([
+            [
+              Markup.button.callback(
+                is34 ? '✅ EMA 34' : '⬜️ EMA 34',
+                'target_toggle_34',
+              ),
+              Markup.button.callback(
+                is89 ? '✅ EMA 89' : '⬜️ EMA 89',
+                'target_toggle_89',
+              ),
+            ],
+            [
+              Markup.button.callback(
+                is200 ? '✅ EMA 200' : '⬜️ EMA 200',
+                'target_toggle_200',
+              ),
+              Markup.button.callback(
+                isNone ? '✅ None (Candle Only)' : '⬜️ None (Candle Only)',
+                'target_toggle_none',
+              ),
+            ],
+            [Markup.button.callback('◀️ Back', 'back_to_settings')],
+          ]);
+          await ctx.editMessageText('🎯 *Select Target EMA Touch(es):*', {
             parse_mode: 'Markdown',
             reply_markup: keyboard.reply_markup,
           });
@@ -1059,7 +1136,10 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
     const formatEmaTarget = (target: string) => {
       if (target === 'all') return 'All';
       if (target === 'none') return 'None (Candle Only)';
-      return `EMA ${target}`;
+      return target
+        .split(',')
+        .map((t) => `EMA ${t}`)
+        .join(', ');
     };
 
     const reversalStatusText = config.emaReversalFilter
