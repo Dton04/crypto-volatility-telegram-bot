@@ -354,6 +354,8 @@ export class BinanceWorkerService implements OnModuleInit, OnModuleDestroy {
             divType: emaData?.divType,
             divPrevRsi: emaData?.divPrevRsi,
             divCurrRsi: emaData?.divCurrRsi,
+            fundingRate: emaData?.fundingRate,
+            openInterestValue: emaData?.openInterestValue,
           });
 
           // Set 1 hour cooldown for daily alerts
@@ -667,6 +669,42 @@ export class BinanceWorkerService implements OnModuleInit, OnModuleDestroy {
       const closes = data.map((k) => parseFloat((k as string[])[4]));
       const currentPrice = closes[closes.length - 1];
 
+      let fundingRate: number | null = null;
+      let openInterestValue: number | null = null;
+
+      try {
+        const [premiumRes, oiRes] = await Promise.all([
+          fetch(
+            `https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${symbol}`,
+          ),
+          fetch(
+            `https://fapi.binance.com/fapi/v1/openInterest?symbol=${symbol}`,
+          ),
+        ]);
+
+        if (premiumRes.ok) {
+          const premiumData = (await premiumRes.json()) as {
+            lastFundingRate?: string;
+          };
+          if (premiumData && premiumData.lastFundingRate) {
+            fundingRate = parseFloat(premiumData.lastFundingRate) * 100;
+          }
+        }
+
+        if (oiRes.ok) {
+          const oiData = (await oiRes.json()) as { openInterest?: string };
+          if (oiData && oiData.openInterest) {
+            const rawOi = parseFloat(oiData.openInterest);
+            openInterestValue = rawOi * currentPrice;
+          }
+        }
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        this.logger.debug(
+          `Failed to fetch Futures info for ${symbol}: ${errMsg}`,
+        );
+      }
+
       const rsiHistory = this.calculateRSIHistory(closes, 14);
 
       const ema34 = this.calculateEMA(closes, 34);
@@ -794,6 +832,8 @@ export class BinanceWorkerService implements OnModuleInit, OnModuleDestroy {
         divType: divData.type,
         divPrevRsi: divData.prevRsi,
         divCurrRsi: divData.currRsi,
+        fundingRate,
+        openInterestValue,
       };
     } catch (err) {
       this.logger.error(`Error calculating EMA Reversal for ${symbol}:`, err);
@@ -956,6 +996,8 @@ export class BinanceWorkerService implements OnModuleInit, OnModuleDestroy {
               divType: emaData.divType,
               divPrevRsi: emaData.divPrevRsi,
               divCurrRsi: emaData.divCurrRsi,
+              fundingRate: emaData.fundingRate,
+              openInterestValue: emaData.openInterestValue,
             });
 
             // Set 2 hours cooldown

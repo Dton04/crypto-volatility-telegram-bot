@@ -41,6 +41,8 @@ interface AlertJobData {
   divType?: 'Regular' | 'None';
   divPrevRsi?: number;
   divCurrRsi?: number;
+  fundingRate?: number | null;
+  openInterestValue?: number | null;
 }
 
 @Processor('telegram-alerts')
@@ -87,7 +89,25 @@ export class AlertsConsumer extends WorkerHost {
       divDetected,
       divPrevRsi,
       divCurrRsi,
+      fundingRate,
+      openInterestValue,
     } = data;
+
+    const formatOI = (val?: number | null) => {
+      if (val === undefined || val === null) return 'N/A';
+      if (val >= 1e9) return `${(val / 1e9).toFixed(2)}B USDT`;
+      if (val >= 1e6) return `${(val / 1e6).toFixed(2)}M USDT`;
+      return `${(val / 1e3).toFixed(2)}K USDT`;
+    };
+
+    const formatFunding = (rate?: number | null) => {
+      if (rate === undefined || rate === null) return 'N/A';
+      const formatted = rate.toFixed(4) + '%';
+      if (rate < 0) {
+        return `\`${formatted}\` 🟢 (Short Squeeze risk)`;
+      }
+      return `\`${formatted}\` 🔴`;
+    };
 
     this.logger.log(
       `Processing alert job for user ${userId}, symbol ${symbol}`,
@@ -171,6 +191,12 @@ export class AlertsConsumer extends WorkerHost {
           ? `• *Divergence*: ${divEmoji} *RSI ${setupDirection} Divergence* (Prev: \`${divPrevRsi}\` -> Curr: \`${divCurrRsi}\`) 🔥\n`
           : '';
 
+        const futuresLine =
+          fundingRate !== undefined && fundingRate !== null
+            ? `• *Funding Rate*: ${formatFunding(fundingRate)}\n` +
+              `• *Open Interest*: \`${formatOI(openInterestValue)}\` 📊\n`
+            : '';
+
         message =
           `${titleLine}\n\n` +
           setupLine +
@@ -179,6 +205,7 @@ export class AlertsConsumer extends WorkerHost {
           rsiLine +
           srLine +
           divLine +
+          futuresLine +
           `\n📈 *EMA Status (${tfText})*:\n` +
           `  - EMA 34: \`$${ema34}\`\n` +
           `  - EMA 89: \`$${ema89}\`\n` +
@@ -231,11 +258,18 @@ export class AlertsConsumer extends WorkerHost {
             ? `  - Divergence: ${divEmoji} *RSI ${setupDirection} Divergence* (Prev: \`${divPrevRsi}\` -> Curr: \`${divCurrRsi}\`) 🔥\n`
             : '';
 
+          const futuresLine =
+            fundingRate !== undefined && fundingRate !== null
+              ? `  - Funding Rate: ${formatFunding(fundingRate)}\n` +
+                `  - Open Interest: \`${formatOI(openInterestValue)}\` 📊\n`
+              : '';
+
           emaFooter =
             `📈 *EMA Info (${tfText})*:\n` +
             rsiLine +
             srLine +
             divLine +
+            futuresLine +
             `  - Nearest: EMA ${nearestEmaName} (\`$${nearestEmaVal}\`) | Diff: \`${nearestEmaDiff}%\`\n` +
             `  - EMA 34: \`$${ema34}\` | EMA 89: \`$${ema89}\` | EMA 200: \`$${ema200}\`\n\n`;
         }

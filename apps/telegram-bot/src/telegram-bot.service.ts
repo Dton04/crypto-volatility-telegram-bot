@@ -166,6 +166,8 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
           divType: 'Regular' | 'None';
           divPrevRsi: number;
           divCurrRsi: number;
+          fundingRate: number | null;
+          openInterestValue: number | null;
         }
 
         const getTestInfo = async (tf: string): Promise<TestResult | null> => {
@@ -183,6 +185,39 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
           const lows = data.map((k) => parseFloat((k as string[])[3]));
           const closes = data.map((k) => parseFloat((k as string[])[4]));
           const currentPrice = closes[closes.length - 1];
+
+          let fundingRate: number | null = null;
+          let openInterestValue: number | null = null;
+
+          try {
+            const [premiumRes, oiRes] = await Promise.all([
+              fetch(
+                `https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${symbol}`,
+              ),
+              fetch(
+                `https://fapi.binance.com/fapi/v1/openInterest?symbol=${symbol}`,
+              ),
+            ]);
+
+            if (premiumRes.ok) {
+              const premiumData = (await premiumRes.json()) as {
+                lastFundingRate?: string;
+              };
+              if (premiumData && premiumData.lastFundingRate) {
+                fundingRate = parseFloat(premiumData.lastFundingRate) * 100;
+              }
+            }
+
+            if (oiRes.ok) {
+              const oiData = (await oiRes.json()) as { openInterest?: string };
+              if (oiData && oiData.openInterest) {
+                const rawOi = parseFloat(oiData.openInterest);
+                openInterestValue = rawOi * currentPrice;
+              }
+            }
+          } catch {
+            // Safe to ignore
+          }
 
           const calculateEMA = (prices: number[], period: number) => {
             const k = 2 / (period + 1);
@@ -541,6 +576,8 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
             divType: divData.type,
             divPrevRsi: divData.prevRsi,
             divCurrRsi: divData.currRsi,
+            fundingRate,
+            openInterestValue,
           };
         };
 
@@ -582,6 +619,27 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
             ? `  • Divergence: ${divEmoji} *RSI ${res.setupDirection} Divergence* (Prev: \`${res.divPrevRsi}\` -> Curr: \`${res.divCurrRsi}\`) 🔥\n`
             : '';
 
+          const formatOI = (val?: number | null) => {
+            if (val === undefined || val === null) return 'N/A';
+            if (val >= 1e9) return `${(val / 1e9).toFixed(2)}B USDT`;
+            if (val >= 1e6) return `${(val / 1e6).toFixed(2)}M USDT`;
+            return `${(val / 1e3).toFixed(2)}K USDT`;
+          };
+
+          const formatFunding = (rate?: number | null) => {
+            if (rate === undefined || rate === null) return 'N/A';
+            const formatted = rate.toFixed(4) + '%';
+            if (rate < 0) {
+              return `\`${formatted}\` 🟢 (Short Squeeze)`;
+            }
+            return `\`${formatted}\` 🔴`;
+          };
+
+          const futuresLine =
+            res.fundingRate !== null
+              ? `  • Funding Rate: ${formatFunding(res.fundingRate)}\n  • Open Interest: \`${formatOI(res.openInterestValue)}\` 📊\n`
+              : '';
+
           return (
             `*${tfName}*:\n` +
             `  • Price: \`$${res.currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}\`\n` +
@@ -590,6 +648,7 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
             `  • RSI: \`${res.rsi.toFixed(2)}\` (${rsiStatus})\n` +
             srLine +
             divLine +
+            futuresLine +
             `  • EMA Touches: ${touchStrs.join(', ') || 'None'}\n` +
             `  • EMAs: 34: \`$${res.ema34.toLocaleString(undefined, { maximumFractionDigits: 4 })}\` | 89: \`$${res.ema89.toLocaleString(undefined, { maximumFractionDigits: 4 })}\` | 200: \`$${res.ema200.toLocaleString(undefined, { maximumFractionDigits: 4 })}\`\n`
           );
