@@ -416,9 +416,16 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
             ],
             [
               Markup.button.callback('+100%', 'vol24_set_100'),
-              Markup.button.callback('+200%', 'vol24_set_200'),
+              Markup.button.callback('+150%', 'vol24_set_150'),
             ],
-            [Markup.button.callback('◀️ Back', 'back_to_settings')],
+            [
+              Markup.button.callback('+200%', 'vol24_set_200'),
+              Markup.button.callback('+300%', 'vol24_set_300'),
+            ],
+            [
+              Markup.button.callback('+500%', 'vol24_set_500'),
+              Markup.button.callback('◀️ Back', 'back_to_settings'),
+            ],
           ]);
           await ctx.editMessageText(
             '📊 *Select 24h Volume Change Threshold:*',
