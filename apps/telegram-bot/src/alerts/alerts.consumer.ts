@@ -51,6 +51,11 @@ interface AlertJobData {
   ltfSwingPrice?: number;
   ltfLastSwingLow?: number;
   ltfLastSwingHigh?: number;
+  htfFvgType?: 'BULLISH' | 'BEARISH' | 'NONE';
+  htfFvgMitigating?: boolean;
+  htfSweepType?: 'SSL' | 'BSL' | 'NONE';
+  ltfObTop?: number;
+  ltfObBottom?: number;
 }
 
 @Processor('telegram-alerts')
@@ -106,6 +111,11 @@ export class AlertsConsumer extends WorkerHost {
       ltfSwingPrice,
       ltfLastSwingLow,
       ltfLastSwingHigh,
+      htfFvgType,
+      htfFvgMitigating,
+      htfSweepType,
+      ltfObTop,
+      ltfObBottom,
     } = data;
 
     const formatOI = (val?: number | null) => {
@@ -206,6 +216,22 @@ export class AlertsConsumer extends WorkerHost {
           ? `• *Divergence*: ${divEmoji} *RSI ${setupDirection} Divergence* (Prev: \`${divPrevRsi}\` -> Curr: \`${divCurrRsi}\`) 🔥\n`
           : '';
 
+        let ictStatusLines = '';
+        if (htfSweepType && htfSweepType !== 'NONE') {
+          const isGoodSweep =
+            (setupDirection === 'LONG' && htfSweepType === 'SSL') ||
+            (setupDirection === 'SHORT' && htfSweepType === 'BSL');
+          ictStatusLines += `• *Liquidity Sweep*: \`${htfSweepType} Swept\` ${isGoodSweep ? '🟢 (Săn thanh khoản)' : '⚪️'}\n`;
+        }
+        if (htfFvgType && htfFvgType !== 'NONE') {
+          const isGoodFvg =
+            (setupDirection === 'LONG' && htfFvgType === 'BULLISH') ||
+            (setupDirection === 'SHORT' && htfFvgType === 'BEARISH');
+          if (isGoodFvg) {
+            ictStatusLines += `• *Imbalance (FVG)*: \`${htfFvgType} FVG\` ${htfFvgMitigating ? '🔥 (Mitigating)' : '🟢'}\n`;
+          }
+        }
+
         const futuresLine =
           fundingRate !== undefined && fundingRate !== null
             ? `• *Funding Rate*: ${formatFunding(fundingRate)}\n` +
@@ -280,11 +306,17 @@ export class AlertsConsumer extends WorkerHost {
 
           const statusEmoji = ltfConfirmed ? '🟢 (CONFIRMED)' : '⏳ (PENDING)';
 
+          let obLine = '';
+          if (ltfObTop && ltfObBottom) {
+            obLine = `  - Limit Entry (Order Block): \`$${formatPrice(ltfObBottom)} - $${formatPrice(ltfObTop)}\` 🧱\n`;
+          }
+
           ltfTextLine =
-            `🛡️ *Option 2: SMC Confirmation (Safe)*\n` +
+            `🛡️ *Option 2: SMC & ICT Confirmation (Safe)*\n` +
             `  - Status: ${statusEmoji}\n` +
             `  - Wait for \`${ltfTimeframeName}\` ${setupDirection === 'LONG' ? 'Bullish' : 'Bearish'} CHoCH\n` +
             `  - Trigger: ${setupDirection === 'LONG' ? 'Close above Swing High' : 'Close below Swing Low'} \`$${formatPrice(smcTriggerVal)}\`\n` +
+            (obLine ? obLine : '') +
             `  - Estimated SL: \`$${formatPrice(smcSlVal)}\` (Risk: \`${Math.abs(((entryPrice - smcSlVal) / entryPrice) * 100).toFixed(2)}%\`)\n` +
             `  - Estimated TP1 / TP2: \`$${formatPrice(smcTp1Val)}\` / \`$${formatPrice(smcTp2Val)}\` (RR 1:1.5 / 1:2.5)\n`;
         }
@@ -308,6 +340,7 @@ export class AlertsConsumer extends WorkerHost {
           srLine +
           divLine +
           futuresLine +
+          (ictStatusLines ? ictStatusLines : '') +
           tradingIdeaLine +
           `\n📈 *EMA Status (${tfText})*:\n` +
           `  - EMA 34: \`$${ema34}\`\n` +

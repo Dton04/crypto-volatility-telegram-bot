@@ -228,12 +228,21 @@ export class KlineScannerService {
         }
       }
 
+      const htfFvg = this.indicatorsService.detectFVG(highs, lows, closes);
+      const htfSweep = this.indicatorsService.detectLiquiditySweep(
+        highs,
+        lows,
+        closes,
+      );
+
       let ltfConfirmed = false;
       let ltfTimeframeName = '';
       let ltfBreakPrice = 0;
       let ltfSwingPrice = 0;
       let ltfLastSwingLow = 0;
       let ltfLastSwingHigh = 0;
+      let ltfObTop = 0;
+      let ltfObBottom = 0;
 
       if (setupDirection) {
         let ltfInterval = '';
@@ -264,6 +273,30 @@ export class KlineScannerService {
                 ltfSwingPrice = conf.swingPrice || 0;
                 ltfLastSwingLow = conf.lastSwingLow || 0;
                 ltfLastSwingHigh = conf.lastSwingHigh || 0;
+
+                const ltfOpens = ltfData.map((k) =>
+                  parseFloat((k as string[])[1]),
+                );
+                const ltfHighs = ltfData.map((k) =>
+                  parseFloat((k as string[])[2]),
+                );
+                const ltfLows = ltfData.map((k) =>
+                  parseFloat((k as string[])[3]),
+                );
+                const ltfCloses = ltfData.map((k) =>
+                  parseFloat((k as string[])[4]),
+                );
+                const ob = this.indicatorsService.detectOrderBlock(
+                  ltfHighs,
+                  ltfLows,
+                  ltfOpens,
+                  ltfCloses,
+                  setupDirection,
+                );
+                if (ob.hasOb) {
+                  ltfObTop = ob.obTop;
+                  ltfObBottom = ob.obBottom;
+                }
               }
             }
           } catch (err) {
@@ -306,6 +339,11 @@ export class KlineScannerService {
         divCurrRsi: divData.currRsi,
         fundingRate,
         openInterestValue,
+        htfFvgType: htfFvg.fvgType,
+        htfFvgMitigating: htfFvg.isMitigating,
+        htfSweepType: htfSweep.sweepType,
+        ltfObTop,
+        ltfObBottom,
       };
     } catch (err) {
       this.logger.error(`Error calculating EMA Reversal for ${symbol}:`, err);
@@ -416,6 +454,11 @@ export class KlineScannerService {
             ltfSwingPrice: emaData?.ltfSwingPrice || 0,
             ltfLastSwingLow: emaData?.ltfLastSwingLow || 0,
             ltfLastSwingHigh: emaData?.ltfLastSwingHigh || 0,
+            htfFvgType: emaData?.htfFvgType || 'NONE',
+            htfFvgMitigating: emaData?.htfFvgMitigating || false,
+            htfSweepType: emaData?.htfSweepType || 'NONE',
+            ltfObTop: emaData?.ltfObTop || 0,
+            ltfObBottom: emaData?.ltfObBottom || 0,
           });
 
           // Set 1 hour cooldown for daily alerts
@@ -600,6 +643,11 @@ export class KlineScannerService {
               ltfSwingPrice: emaData.ltfSwingPrice || 0,
               ltfLastSwingLow: emaData.ltfLastSwingLow || 0,
               ltfLastSwingHigh: emaData.ltfLastSwingHigh || 0,
+              htfFvgType: emaData.htfFvgType || 'NONE',
+              htfFvgMitigating: emaData.htfFvgMitigating || false,
+              htfSweepType: emaData.htfSweepType || 'NONE',
+              ltfObTop: emaData.ltfObTop || 0,
+              ltfObBottom: emaData.ltfObBottom || 0,
             });
 
             // Set 2 hours cooldown

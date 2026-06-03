@@ -334,4 +334,214 @@ export class TechnicalIndicatorsService {
       };
     }
   }
+
+  detectFVG(
+    highs: number[],
+    lows: number[],
+    closes: number[],
+  ): {
+    hasActiveFvg: boolean;
+    fvgType: 'BULLISH' | 'BEARISH' | 'NONE';
+    fvgTop: number;
+    fvgBottom: number;
+    isMitigating: boolean;
+  } {
+    const n = highs.length;
+    for (let i = n - 3; i >= 0; i--) {
+      const h1 = highs[i];
+      const l3 = lows[i + 2];
+
+      if (l3 > h1) {
+        let mitigated = false;
+        for (let j = i + 3; j < n; j++) {
+          if (lows[j] <= h1) {
+            mitigated = true;
+            break;
+          }
+        }
+        if (!mitigated) {
+          const currentPrice = closes[n - 1];
+          const isMitigating = currentPrice >= h1 && currentPrice <= l3;
+          return {
+            hasActiveFvg: true,
+            fvgType: 'BULLISH',
+            fvgTop: l3,
+            fvgBottom: h1,
+            isMitigating,
+          };
+        }
+      }
+
+      const l1 = lows[i];
+      const h3 = highs[i + 2];
+      if (h3 < l1) {
+        let mitigated = false;
+        for (let j = i + 3; j < n; j++) {
+          if (highs[j] >= l1) {
+            mitigated = true;
+            break;
+          }
+        }
+        if (!mitigated) {
+          const currentPrice = closes[n - 1];
+          const isMitigating = currentPrice >= h3 && currentPrice <= l1;
+          return {
+            hasActiveFvg: true,
+            fvgType: 'BEARISH',
+            fvgTop: l1,
+            fvgBottom: h3,
+            isMitigating,
+          };
+        }
+      }
+    }
+
+    return {
+      hasActiveFvg: false,
+      fvgType: 'NONE',
+      fvgTop: 0,
+      fvgBottom: 0,
+      isMitigating: false,
+    };
+  }
+
+  detectLiquiditySweep(
+    highs: number[],
+    lows: number[],
+    closes: number[],
+  ): {
+    sweepDetected: boolean;
+    sweepType: 'SSL' | 'BSL' | 'NONE';
+    sweptPrice: number;
+  } {
+    const n = highs.length;
+    if (n < 10) {
+      return { sweepDetected: false, sweepType: 'NONE', sweptPrice: 0 };
+    }
+
+    const currentHigh = highs[n - 1];
+    const currentLow = lows[n - 1];
+    const currentClose = closes[n - 1];
+
+    let recentSwingHigh = 0;
+    let recentSwingLow = 0;
+
+    for (let i = n - 3; i >= Math.max(2, n - 25); i--) {
+      const isHigh =
+        highs[i] >= highs[i - 1] &&
+        highs[i] >= highs[i - 2] &&
+        highs[i] >= highs[i + 1] &&
+        highs[i] >= highs[i + 2];
+      if (isHigh) {
+        recentSwingHigh = highs[i];
+        break;
+      }
+    }
+
+    for (let i = n - 3; i >= Math.max(2, n - 25); i--) {
+      const isLow =
+        lows[i] <= lows[i - 1] &&
+        lows[i] <= lows[i - 2] &&
+        lows[i] <= lows[i + 1] &&
+        lows[i] <= lows[i + 2];
+      if (isLow) {
+        recentSwingLow = lows[i];
+        break;
+      }
+    }
+
+    if (
+      recentSwingLow > 0 &&
+      currentLow < recentSwingLow &&
+      currentClose > recentSwingLow
+    ) {
+      return {
+        sweepDetected: true,
+        sweepType: 'SSL',
+        sweptPrice: recentSwingLow,
+      };
+    }
+
+    if (
+      recentSwingHigh > 0 &&
+      currentHigh > recentSwingHigh &&
+      currentClose < recentSwingHigh
+    ) {
+      return {
+        sweepDetected: true,
+        sweepType: 'BSL',
+        sweptPrice: recentSwingHigh,
+      };
+    }
+
+    return {
+      sweepDetected: false,
+      sweepType: 'NONE',
+      sweptPrice: 0,
+    };
+  }
+
+  detectOrderBlock(
+    highs: number[],
+    lows: number[],
+    opens: number[],
+    closes: number[],
+    direction: 'LONG' | 'SHORT',
+  ): {
+    hasOb: boolean;
+    obType: 'BULLISH' | 'BEARISH' | 'NONE';
+    obTop: number;
+    obBottom: number;
+  } {
+    const n = highs.length;
+    if (n < 15) {
+      return { hasOb: false, obType: 'NONE', obTop: 0, obBottom: 0 };
+    }
+
+    if (direction === 'LONG') {
+      let minLow = Infinity;
+      let minIdx = -1;
+      for (let i = n - 15; i < n - 2; i++) {
+        if (lows[i] < minLow) {
+          minLow = lows[i];
+          minIdx = i;
+        }
+      }
+      if (minIdx !== -1) {
+        let obIdx = minIdx;
+        if (closes[minIdx] > opens[minIdx] && minIdx > 0) {
+          obIdx = minIdx - 1;
+        }
+        return {
+          hasOb: true,
+          obType: 'BULLISH',
+          obTop: Math.max(opens[obIdx], closes[obIdx]),
+          obBottom: lows[obIdx],
+        };
+      }
+    } else {
+      let maxHigh = -Infinity;
+      let maxIdx = -1;
+      for (let i = n - 15; i < n - 2; i++) {
+        if (highs[i] > maxHigh) {
+          maxHigh = highs[i];
+          maxIdx = i;
+        }
+      }
+      if (maxIdx !== -1) {
+        let obIdx = maxIdx;
+        if (closes[maxIdx] < opens[maxIdx] && maxIdx > 0) {
+          obIdx = maxIdx - 1;
+        }
+        return {
+          hasOb: true,
+          obType: 'BEARISH',
+          obTop: highs[obIdx],
+          obBottom: Math.min(opens[obIdx], closes[obIdx]),
+        };
+      }
+    }
+
+    return { hasOb: false, obType: 'NONE', obTop: 0, obBottom: 0 };
+  }
 }

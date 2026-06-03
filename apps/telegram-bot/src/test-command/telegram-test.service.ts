@@ -31,6 +31,11 @@ interface TestResult {
   ltfSwingPrice?: number;
   ltfLastSwingLow?: number;
   ltfLastSwingHigh?: number;
+  htfFvgType?: 'BULLISH' | 'BEARISH' | 'NONE';
+  htfFvgMitigating?: boolean;
+  htfSweepType?: 'SSL' | 'BSL' | 'NONE';
+  ltfObTop?: number;
+  ltfObBottom?: number;
 }
 
 @Injectable()
@@ -223,6 +228,215 @@ export class TelegramTestService {
             }
 
             return rsiHistory;
+          };
+
+          const detectFVG = (
+            highs: number[],
+            lows: number[],
+            closes: number[],
+          ) => {
+            const n = highs.length;
+            for (let i = n - 3; i >= 0; i--) {
+              const h1 = highs[i];
+              const l3 = lows[i + 2];
+
+              if (l3 > h1) {
+                let mitigated = false;
+                for (let j = i + 3; j < n; j++) {
+                  if (lows[j] <= h1) {
+                    mitigated = true;
+                    break;
+                  }
+                }
+                if (!mitigated) {
+                  const currentPrice = closes[n - 1];
+                  const isMitigating = currentPrice >= h1 && currentPrice <= l3;
+                  return {
+                    hasActiveFvg: true,
+                    fvgType: 'BULLISH' as const,
+                    fvgTop: l3,
+                    fvgBottom: h1,
+                    isMitigating,
+                  };
+                }
+              }
+
+              const l1 = lows[i];
+              const h3 = highs[i + 2];
+              if (h3 < l1) {
+                let mitigated = false;
+                for (let j = i + 3; j < n; j++) {
+                  if (highs[j] >= l1) {
+                    mitigated = true;
+                    break;
+                  }
+                }
+                if (!mitigated) {
+                  const currentPrice = closes[n - 1];
+                  const isMitigating = currentPrice >= h3 && currentPrice <= l1;
+                  return {
+                    hasActiveFvg: true,
+                    fvgType: 'BEARISH' as const,
+                    fvgTop: l1,
+                    fvgBottom: h3,
+                    isMitigating,
+                  };
+                }
+              }
+            }
+
+            return {
+              hasActiveFvg: false,
+              fvgType: 'NONE' as const,
+              fvgTop: 0,
+              fvgBottom: 0,
+              isMitigating: false,
+            };
+          };
+
+          const detectLiquiditySweep = (
+            highs: number[],
+            lows: number[],
+            closes: number[],
+          ) => {
+            const n = highs.length;
+            if (n < 10) {
+              return {
+                sweepDetected: false,
+                sweepType: 'NONE' as const,
+                sweptPrice: 0,
+              };
+            }
+
+            const currentHigh = highs[n - 1];
+            const currentLow = lows[n - 1];
+            const currentClose = closes[n - 1];
+
+            let recentSwingHigh = 0;
+            let recentSwingLow = 0;
+
+            for (let i = n - 3; i >= Math.max(2, n - 25); i--) {
+              const isHigh =
+                highs[i] >= highs[i - 1] &&
+                highs[i] >= highs[i - 2] &&
+                highs[i] >= highs[i + 1] &&
+                highs[i] >= highs[i + 2];
+              if (isHigh) {
+                recentSwingHigh = highs[i];
+                break;
+              }
+            }
+
+            for (let i = n - 3; i >= Math.max(2, n - 25); i--) {
+              const isLow =
+                lows[i] <= lows[i - 1] &&
+                lows[i] <= lows[i - 2] &&
+                lows[i] <= lows[i + 1] &&
+                lows[i] <= lows[i + 2];
+              if (isLow) {
+                recentSwingLow = lows[i];
+                break;
+              }
+            }
+
+            if (
+              recentSwingLow > 0 &&
+              currentLow < recentSwingLow &&
+              currentClose > recentSwingLow
+            ) {
+              return {
+                sweepDetected: true,
+                sweepType: 'SSL' as const,
+                sweptPrice: recentSwingLow,
+              };
+            }
+
+            if (
+              recentSwingHigh > 0 &&
+              currentHigh > recentSwingHigh &&
+              currentClose < recentSwingHigh
+            ) {
+              return {
+                sweepDetected: true,
+                sweepType: 'BSL' as const,
+                sweptPrice: recentSwingHigh,
+              };
+            }
+
+            return {
+              sweepDetected: false,
+              sweepType: 'NONE' as const,
+              sweptPrice: 0,
+            };
+          };
+
+          const detectOrderBlock = (
+            highs: number[],
+            lows: number[],
+            opens: number[],
+            closes: number[],
+            direction: 'LONG' | 'SHORT',
+          ) => {
+            const n = highs.length;
+            if (n < 15) {
+              return {
+                hasOb: false,
+                obType: 'NONE' as const,
+                obTop: 0,
+                obBottom: 0,
+              };
+            }
+
+            if (direction === 'LONG') {
+              let minLow = Infinity;
+              let minIdx = -1;
+              for (let i = n - 15; i < n - 2; i++) {
+                if (lows[i] < minLow) {
+                  minLow = lows[i];
+                  minIdx = i;
+                }
+              }
+              if (minIdx !== -1) {
+                let obIdx = minIdx;
+                if (closes[minIdx] > opens[minIdx] && minIdx > 0) {
+                  obIdx = minIdx - 1;
+                }
+                return {
+                  hasOb: true,
+                  obType: 'BULLISH' as const,
+                  obTop: Math.max(opens[obIdx], closes[obIdx]),
+                  obBottom: lows[obIdx],
+                };
+              }
+            } else {
+              let maxHigh = -Infinity;
+              let maxIdx = -1;
+              for (let i = n - 15; i < n - 2; i++) {
+                if (highs[i] > maxHigh) {
+                  maxHigh = highs[i];
+                  maxIdx = i;
+                }
+              }
+              if (maxIdx !== -1) {
+                let obIdx = maxIdx;
+                if (closes[maxIdx] < opens[maxIdx] && maxIdx > 0) {
+                  obIdx = maxIdx - 1;
+                }
+                return {
+                  hasOb: true,
+                  obType: 'BEARISH' as const,
+                  obTop: highs[obIdx],
+                  obBottom: Math.min(opens[obIdx], closes[obIdx]),
+                };
+              }
+            }
+
+            return {
+              hasOb: false,
+              obType: 'NONE' as const,
+              obTop: 0,
+              obBottom: 0,
+            };
           };
 
           const detectRSIDivergence = (
@@ -521,12 +735,17 @@ export class TelegramTestService {
             );
           }
 
+          const htfFvg = detectFVG(highs, lows, closes);
+          const htfSweep = detectLiquiditySweep(highs, lows, closes);
+
           let ltfConfirmed = false;
           let ltfTimeframeName = '';
           let ltfBreakPrice = 0;
           let ltfSwingPrice = 0;
           let ltfLastSwingLow = 0;
           let ltfLastSwingHigh = 0;
+          let ltfObTop = 0;
+          let ltfObBottom = 0;
 
           if (setupDirection) {
             let ltfInterval = '';
@@ -554,6 +773,30 @@ export class TelegramTestService {
                     ltfSwingPrice = conf.swingPrice || 0;
                     ltfLastSwingLow = conf.lastSwingLow || 0;
                     ltfLastSwingHigh = conf.lastSwingHigh || 0;
+
+                    const ltfOpens = ltfData.map((k) =>
+                      parseFloat((k as string[])[1]),
+                    );
+                    const ltfHighs = ltfData.map((k) =>
+                      parseFloat((k as string[])[2]),
+                    );
+                    const ltfLows = ltfData.map((k) =>
+                      parseFloat((k as string[])[3]),
+                    );
+                    const ltfCloses = ltfData.map((k) =>
+                      parseFloat((k as string[])[4]),
+                    );
+                    const ob = detectOrderBlock(
+                      ltfHighs,
+                      ltfLows,
+                      ltfOpens,
+                      ltfCloses,
+                      setupDirection,
+                    );
+                    if (ob.hasOb) {
+                      ltfObTop = ob.obTop;
+                      ltfObBottom = ob.obBottom;
+                    }
                   }
                 }
               } catch {
@@ -592,6 +835,11 @@ export class TelegramTestService {
             ltfSwingPrice,
             ltfLastSwingLow,
             ltfLastSwingHigh,
+            htfFvgType: htfFvg.fvgType,
+            htfFvgMitigating: htfFvg.isMitigating,
+            htfSweepType: htfSweep.sweepType,
+            ltfObTop,
+            ltfObBottom,
           };
         } catch (e) {
           this.logger.error(`Error in getTestInfo for ${tfName}:`, e);
@@ -738,11 +986,17 @@ export class TelegramTestService {
             ? '🟢 (CONFIRMED)'
             : '⏳ (PENDING)';
 
+          let obLine = '';
+          if (res.ltfObTop && res.ltfObBottom) {
+            obLine = `      - Limit Entry (Order Block): \`$${formatVal(res.ltfObBottom)} - $${formatVal(res.ltfObTop)}\` 🧱\n`;
+          }
+
           ltfTextLine =
-            `    - 🛡️ *Option 2: SMC Confirmation*\n` +
+            `    - 🛡️ *Option 2: SMC & ICT Confirmation*\n` +
             `      - Status: ${statusEmoji}\n` +
             `      - Wait for \`${res.ltfTimeframeName}\` ${res.setupDirection === 'LONG' ? 'Bullish' : 'Bearish'} CHoCH\n` +
             `      - Trigger: ${res.setupDirection === 'LONG' ? 'Close above Swing High' : 'Close below Swing Low'} \`$${formatVal(smcTriggerVal)}\`\n` +
+            (obLine ? obLine : '') +
             `      - Estimated SL: \`$${formatVal(smcSlVal)}\` (Risk: \`${Math.abs(((entryPrice - smcSlVal) / entryPrice) * 100).toFixed(2)}%\`)\n` +
             `      - Estimated TP1 / TP2: \`$${formatVal(smcTp1Val)}\` / \`$${formatVal(smcTp2Val)}\` (RR 1:1.5 / 1:2.5)\n`;
         }
@@ -757,6 +1011,22 @@ export class TelegramTestService {
               (ltfTextLine ? ltfTextLine : '')
             : '';
 
+        let ictStatusLines = '';
+        if (res.htfSweepType && res.htfSweepType !== 'NONE') {
+          const isGoodSweep =
+            (res.setupDirection === 'LONG' && res.htfSweepType === 'SSL') ||
+            (res.setupDirection === 'SHORT' && res.htfSweepType === 'BSL');
+          ictStatusLines += `  • Liquidity Sweep: \`${res.htfSweepType} Swept\` ${isGoodSweep ? '🟢 (Săn thanh khoản)' : '⚪️'}\n`;
+        }
+        if (res.htfFvgType && res.htfFvgType !== 'NONE') {
+          const isGoodFvg =
+            (res.setupDirection === 'LONG' && res.htfFvgType === 'BULLISH') ||
+            (res.setupDirection === 'SHORT' && res.htfFvgType === 'BEARISH');
+          if (isGoodFvg) {
+            ictStatusLines += `  • Imbalance (FVG): \`${res.htfFvgType} FVG\` ${res.htfFvgMitigating ? '🔥 (Mitigating)' : '🟢'}\n`;
+          }
+        }
+
         return (
           `*${tfName}*:\n` +
           `  • Price: \`$${res.currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}\`\n` +
@@ -766,6 +1036,7 @@ export class TelegramTestService {
           srLine +
           divLine +
           futuresLine +
+          ictStatusLines +
           tradingIdeaLine +
           `  • EMA Touches: ${touchStrs.join(', ') || 'None'}\n` +
           `  • EMAs: 34: \`$${res.ema34.toLocaleString(undefined, { maximumFractionDigits: 4 })}\` | 89: \`$${res.ema89.toLocaleString(undefined, { maximumFractionDigits: 4 })}\` | 200: \`$${res.ema200.toLocaleString(undefined, { maximumFractionDigits: 4 })}\`\n`
