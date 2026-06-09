@@ -210,10 +210,11 @@ export class TechnicalIndicatorsService {
   }
 
   detectReversalPattern(klines: unknown[][]): string | null {
-    if (klines.length < 3) return null;
+    if (klines.length < 12) return null;
 
     const prev1 = klines[klines.length - 2] as string[];
     const prev2 = klines[klines.length - 3] as string[];
+    const prev3 = klines[klines.length - 4] as string[];
 
     const p1Open = parseFloat(prev1[1]);
     const p1High = parseFloat(prev1[2]);
@@ -223,7 +224,63 @@ export class TechnicalIndicatorsService {
     const p2Open = parseFloat(prev2[1]);
     const p2Close = parseFloat(prev2[4]);
 
-    // 1. Detect Pinbar (Hammer / Inverted Hammer / Shooting Star)
+    // Enforce 1.25x volume surge over the 10-candle average
+    const p1Vol = parseFloat(prev1[5]);
+    let totalVol = 0;
+    for (let i = klines.length - 12; i < klines.length - 2; i++) {
+      totalVol += parseFloat((klines[i] as string[])[5]);
+    }
+    const avgVol = totalVol / 10;
+    if (p1Vol < avgVol * 1.25) {
+      return null;
+    }
+
+    // 1. Detect Bullish Morning Star 🌅 (3-candle pattern)
+    const p3Open = parseFloat(prev3[1]);
+    const p3High = parseFloat(prev3[2]);
+    const p3Low = parseFloat(prev3[3]);
+    const p3Close = parseFloat(prev3[4]);
+    const body3 = Math.abs(p3Close - p3Open);
+    const totalRange3 = p3High - p3Low;
+    const isP3Bearish = p3Close < p3Open;
+
+    const body2 = Math.abs(p2Close - p2Open);
+    const totalRange2 = parseFloat(prev2[2]) - parseFloat(prev2[3]);
+    const isP2Bearish = p2Close < p2Open;
+
+    if (
+      isP3Bearish &&
+      body3 >= totalRange3 * 0.4 &&
+      body2 <= totalRange2 * 0.4 &&
+      Math.max(p2Open, p2Close) <= Math.min(p3Open, p3Close) * 1.015 &&
+      p1Close > p1Open &&
+      p1Close >= p3Close + body3 * 0.5
+    ) {
+      return 'Bullish Morning Star 🌅';
+    }
+
+    // 2. Detect Bullish Tweezer Bottom 👥 (2-candle pattern)
+    const p2Low = parseFloat(prev2[3]);
+    if (
+      isP2Bearish &&
+      p1Close > p1Open &&
+      Math.abs(p1Low - p2Low) / Math.min(p1Low, p2Low) <= 0.0005
+    ) {
+      return 'Bullish Tweezer Bottom 👥';
+    }
+
+    // 3. Detect Bullish Harami 🤰 (2-candle pattern)
+    if (
+      isP2Bearish &&
+      body2 >= totalRange2 * 0.4 &&
+      p1Close > p1Open &&
+      p1Open > p2Close &&
+      p1Close < p2Open
+    ) {
+      return 'Bullish Harami 🤰';
+    }
+
+    // 4. Detect Pinbar (Hammer / Inverted Hammer / Shooting Star)
     const body1 = Math.abs(p1Close - p1Open);
     const totalRange1 = p1High - p1Low;
 
@@ -241,9 +298,7 @@ export class TechnicalIndicatorsService {
       }
     }
 
-    // 2. Detect Engulfing
-    const body2 = Math.abs(p2Close - p2Open);
-    const isP2Bearish = p2Close < p2Open;
+    // 5. Detect Engulfing
     const isP2Bullish = p2Close > p2Open;
     const isP1Bullish = p1Close > p1Open;
     const isP1Bearish = p1Close < p1Open;
@@ -259,7 +314,7 @@ export class TechnicalIndicatorsService {
       }
     }
 
-    // 3. Detect Doji
+    // 6. Detect Doji
     if (totalRange1 > 0 && body1 <= totalRange1 * 0.1) {
       return 'Doji ⏳';
     }

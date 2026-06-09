@@ -627,56 +627,135 @@ export class TelegramTestService {
           let patternLow = 0;
           let patternHigh = 0;
 
-          if (data.length >= 3) {
+          if (data.length >= 12) {
             const prev1 = data[data.length - 2] as string[];
             const prev2 = data[data.length - 3] as string[];
+            const prev3 = data[data.length - 4] as string[];
+
             const p1Open = parseFloat(prev1[1]);
             const p1High = parseFloat(prev1[2]);
             const p1Low = parseFloat(prev1[3]);
             const p1Close = parseFloat(prev1[4]);
+
             const p2Open = parseFloat(prev2[1]);
             const p2High = parseFloat(prev2[2]);
             const p2Low = parseFloat(prev2[3]);
             const p2Close = parseFloat(prev2[4]);
 
-            const body1 = Math.abs(p1Close - p1Open);
-            const totalRange1 = p1High - p1Low;
-            const upperShadow1 = p1High - Math.max(p1Open, p1Close);
-            const lowerShadow1 = Math.min(p1Open, p1Close) - p1Low;
-
-            if (totalRange1 > 0) {
-              if (
-                lowerShadow1 >= totalRange1 * 0.6 &&
-                body1 <= totalRange1 * 0.3
-              ) {
-                pattern = 'Bullish Hammer 🔨';
-                patternLow = p1Low;
-                patternHigh = p1High;
-              } else if (
-                upperShadow1 >= totalRange1 * 0.6 &&
-                body1 <= totalRange1 * 0.3
-              ) {
-                pattern = 'Bearish Shooting Star ☄️';
-                patternLow = p1Low;
-                patternHigh = p1High;
-              }
+            // Enforce 1.25x volume surge over the 10-candle average
+            const p1Vol = parseFloat(prev1[5]);
+            let totalVol = 0;
+            for (let i = data.length - 12; i < data.length - 2; i++) {
+              totalVol += parseFloat((data[i] as string[])[5]);
             }
+            const avgVol = totalVol / 10;
 
-            if (!pattern) {
+            // Only perform pattern matching if volume check passes
+            if (p1Vol >= avgVol * 1.25) {
+              // 1. Detect Bullish Morning Star 🌅 (3-candle pattern)
+              const p3Open = parseFloat(prev3[1]);
+              const p3High = parseFloat(prev3[2]);
+              const p3Low = parseFloat(prev3[3]);
+              const p3Close = parseFloat(prev3[4]);
+              const body3 = Math.abs(p3Close - p3Open);
+              const totalRange3 = p3High - p3Low;
+              const isP3Bearish = p3Close < p3Open;
+
               const body2 = Math.abs(p2Close - p2Open);
-              if (body1 > 0 && body2 > 0) {
+              const totalRange2 = p2High - p2Low;
+              const isP2Bearish = p2Close < p2Open;
+
+              if (
+                isP3Bearish &&
+                body3 >= totalRange3 * 0.4 &&
+                body2 <= totalRange2 * 0.4 &&
+                Math.max(p2Open, p2Close) <=
+                  Math.min(p3Open, p3Close) * 1.015 &&
+                p1Close > p1Open &&
+                p1Close >= p3Close + body3 * 0.5
+              ) {
+                pattern = 'Bullish Morning Star 🌅';
+                patternLow = Math.min(p1Low, p2Low, p3Low);
+                patternHigh = Math.max(p1High, p2High, p3High);
+              }
+
+              // 2. Detect Bullish Tweezer Bottom 👥 (2-candle pattern)
+              if (!pattern) {
                 if (
-                  p2Close < p2Open &&
+                  isP2Bearish &&
                   p1Close > p1Open &&
+                  Math.abs(p1Low - p2Low) / Math.min(p1Low, p2Low) <= 0.0005
+                ) {
+                  pattern = 'Bullish Tweezer Bottom 👥';
+                  patternLow = Math.min(p1Low, p2Low);
+                  patternHigh = Math.max(p1High, p2High);
+                }
+              }
+
+              // 3. Detect Bullish Harami 🤰 (2-candle pattern)
+              if (!pattern) {
+                if (
+                  isP2Bearish &&
+                  body2 >= totalRange2 * 0.4 &&
+                  p1Close > p1Open &&
+                  p1Open > p2Close &&
+                  p1Close < p2Open
+                ) {
+                  pattern = 'Bullish Harami 🤰';
+                  patternLow = Math.min(p1Low, p2Low);
+                  patternHigh = Math.max(p1High, p2High);
+                }
+              }
+
+              // 4. Pinbar (Hammer / Inverted Hammer / Shooting Star)
+              const body1 = Math.abs(p1Close - p1Open);
+              const totalRange1 = p1High - p1Low;
+
+              if (!pattern && totalRange1 > 0) {
+                const upperShadow1 = p1High - Math.max(p1Open, p1Close);
+                const lowerShadow1 = Math.min(p1Open, p1Close) - p1Low;
+
+                // Bullish Hammer: long lower shadow, small body
+                if (
+                  lowerShadow1 >= totalRange1 * 0.6 &&
+                  body1 <= totalRange1 * 0.3
+                ) {
+                  pattern = 'Bullish Hammer 🔨';
+                  patternLow = p1Low;
+                  patternHigh = p1High;
+                }
+                // Bearish Shooting Star: long upper shadow, small body
+                else if (
+                  upperShadow1 >= totalRange1 * 0.6 &&
+                  body1 <= totalRange1 * 0.3
+                ) {
+                  pattern = 'Bearish Shooting Star ☄️';
+                  patternLow = p1Low;
+                  patternHigh = p1High;
+                }
+              }
+
+              // 5. Detect Engulfing
+              if (!pattern && body1 > 0 && body2 > 0) {
+                const isP2Bullish = p2Close > p2Open;
+                const isP1Bullish = p1Close > p1Open;
+                const isP1Bearish = p1Close < p1Open;
+
+                // Bullish Engulfing
+                if (
+                  isP2Bearish &&
+                  isP1Bullish &&
                   p1Close > p2Open &&
                   p1Open < p2Close
                 ) {
                   pattern = 'Bullish Engulfing 📈';
                   patternLow = Math.min(p1Low, p2Low);
                   patternHigh = Math.max(p1High, p2High);
-                } else if (
-                  p2Close > p2Open &&
-                  p1Close < p1Open &&
+                }
+                // Bearish Engulfing
+                else if (
+                  isP2Bullish &&
+                  isP1Bearish &&
                   p1Close < p2Open &&
                   p1Open > p2Close
                 ) {
@@ -685,12 +764,13 @@ export class TelegramTestService {
                   patternHigh = Math.max(p1High, p2High);
                 }
               }
-            }
 
-            if (!pattern && totalRange1 > 0 && body1 <= totalRange1 * 0.1) {
-              pattern = 'Doji ⏳';
-              patternLow = p1Low;
-              patternHigh = p1High;
+              // 6. Detect Doji
+              if (!pattern && totalRange1 > 0 && body1 <= totalRange1 * 0.1) {
+                pattern = 'Doji ⏳';
+                patternLow = p1Low;
+                patternHigh = p1High;
+              }
             }
           }
 

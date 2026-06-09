@@ -613,7 +613,11 @@ export class KlineScannerService {
           const isNearSR =
             emaData.isNearSR &&
             emaData.srDiff !== undefined &&
-            emaData.srDiff <= 1.5;
+            emaData.srDiff <= 1.5 &&
+            ((emaData.setupDirection === 'LONG' &&
+              emaData.srType === 'Support') ||
+              (emaData.setupDirection === 'SHORT' &&
+                emaData.srType === 'Resistance'));
           const hasSweep =
             emaData.htfSweepType && emaData.htfSweepType !== 'NONE';
           const hasFvg = emaData.htfFvgType && emaData.htfFvgType !== 'NONE';
