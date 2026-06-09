@@ -43,6 +43,7 @@ export class KlineScannerService {
       let interval = '4h';
       if (timeframe === '1h') interval = '1h';
       if (timeframe === '1d') interval = '1d';
+      if (timeframe === '1w') interval = '1w';
 
       const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=250`;
       const res = await fetch(url);
@@ -255,6 +256,9 @@ export class KlineScannerService {
         } else if (timeframe === '1h') {
           ltfInterval = '5m';
           ltfTimeframeName = 'M5';
+        } else if (timeframe === '1w') {
+          ltfInterval = '4h';
+          ltfTimeframeName = 'H4';
         }
 
         if (ltfInterval) {
@@ -412,6 +416,9 @@ export class KlineScannerService {
               });
             }
           }
+          if (detectedPatterns.length === 0) {
+            continue;
+          }
 
           void this.alertsQueue.add('alert-job', {
             userId: config.userId,
@@ -487,6 +494,8 @@ export class KlineScannerService {
           timeframesToScan.add('4h');
         if (tfList.includes('1d') && currentHour % 24 === 0)
           timeframesToScan.add('1d');
+        if (tfList.includes('1w') && currentHour % 168 === 0)
+          timeframesToScan.add('1w');
       }
     }
 
@@ -597,6 +606,29 @@ export class KlineScannerService {
             if (!setupDirection) continue;
           }
 
+          // 5. Strict Reversal Confluence filter to prevent noise/garbage alerts
+          const isNearEma =
+            emaData.nearestEmaDiff !== undefined &&
+            emaData.nearestEmaDiff <= 1.5;
+          const isNearSR =
+            emaData.isNearSR &&
+            emaData.srDiff !== undefined &&
+            emaData.srDiff <= 1.5;
+          const hasSweep =
+            emaData.htfSweepType && emaData.htfSweepType !== 'NONE';
+          const hasFvg = emaData.htfFvgType && emaData.htfFvgType !== 'NONE';
+          const hasDivergence = emaData.divDetected;
+
+          if (
+            !isNearEma &&
+            !isNearSR &&
+            !hasSweep &&
+            !hasFvg &&
+            !hasDivergence
+          ) {
+            continue;
+          }
+
           // Check cooldown
           const cooldownKey = `${config.userId}:${symbol}:EMA_INDEPENDENT_${tf}`;
           const nowMs = Date.now();
@@ -607,7 +639,7 @@ export class KlineScannerService {
               telegramId: config.telegramId,
               symbol,
               alertType: 'VOLUME_VOLATILITY',
-              timeframe: tf === '1d' ? 'H24' : 'H1',
+              timeframe: tf === '1d' || tf === '1w' ? 'H24' : 'H1',
               oldValue: 0,
               newValue: 0,
               percentageChange: 0,

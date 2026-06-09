@@ -55,7 +55,7 @@ export class TelegramTestService {
       }
       const symbol = parts[1].toUpperCase();
       await ctx.reply(
-        `🔍 Testing EMA and Candlestick setup for *${symbol}* across H1, H4, and D1...`,
+        `🔍 Testing EMA and Candlestick setup for *${symbol}* across H1, H4, D1, and W1...`,
         { parse_mode: 'Markdown' },
       );
 
@@ -66,6 +66,7 @@ export class TelegramTestService {
           let interval = '4h';
           if (tfName === '1h') interval = '1h';
           if (tfName === '1d') interval = '1d';
+          if (tfName === '1w') interval = '1w';
 
           const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=250`;
           const res = await fetch(url);
@@ -758,6 +759,9 @@ export class TelegramTestService {
             } else if (tfName === '1h') {
               ltfInterval = '5m';
               ltfTimeframeName = 'M5';
+            } else if (tfName === '1w') {
+              ltfInterval = '4h';
+              ltfTimeframeName = 'H4';
             }
 
             if (ltfInterval) {
@@ -850,8 +854,9 @@ export class TelegramTestService {
       const res1h = await getTestInfo('1h');
       const res4h = await getTestInfo('4h');
       const res1d = await getTestInfo('1d');
+      const res1w = await getTestInfo('1w');
 
-      if (!res1h || !res4h || !res1d) {
+      if (!res1h || !res4h || !res1d || !res1w) {
         await ctx.reply(
           '⚠️ Error fetching data from Binance. Please verify the symbol is correct (e.g. BTCUSDT).',
         );
@@ -1049,7 +1054,9 @@ export class TelegramTestService {
         `\n` +
         formatRes('4 HOURS (H4)', res4h) +
         `\n` +
-        formatRes('1 DAY (D1)', res1d);
+        formatRes('1 DAY (D1)', res1d) +
+        `\n` +
+        formatRes('1 WEEK (W1)', res1w);
 
       await ctx.reply(replyMsg, { parse_mode: 'Markdown' });
     } catch (err) {
