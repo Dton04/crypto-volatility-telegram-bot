@@ -18,9 +18,14 @@ export class DatabaseService
   private static adapter: PrismaPg;
 
   constructor() {
-    const connectionString = process.env.DATABASE_URL;
+    let connectionString = process.env.DATABASE_URL;
     if (!connectionString) {
-      throw new Error('DATABASE_URL environment variable is not defined');
+      const dbUser = process.env.DB_USER || 'telecrypt';
+      const dbPass = process.env.DB_PASSWORD || 'telecrypt_secure_pass_135';
+      const dbHost = process.env.DB_HOST || 'localhost';
+      const dbPort = process.env.DB_PORT || '5432';
+      const dbName = process.env.DB_NAME || 'telecrypt_db';
+      connectionString = `postgresql://${dbUser}:${dbPass}@${dbHost}:${dbPort}/${dbName}?schema=public`;
     }
 
     if (!DatabaseService.pool) {

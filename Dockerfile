@@ -38,6 +38,7 @@ COPY --from=builder /usr/src/app/node_modules ./node_modules
 # Copy build artifacts and prisma settings
 COPY --from=builder /usr/src/app/dist/apps/${APP_NAME} ./dist
 COPY --from=builder /usr/src/app/prisma ./prisma
+COPY --from=builder /usr/src/app/prisma.config.js ./
 
 # Entrypoint runner command
 CMD ["node", "dist/main.js"]
