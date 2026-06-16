@@ -1,5 +1,5 @@
 # Stage 1: Build dependencies & generate Prisma client
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /usr/src/app
 
@@ -9,11 +9,11 @@ COPY prisma ./prisma/
 # Install all dependencies (including devDependencies) to compile TypeScript
 RUN npm ci
 
-# Copy application source code
-COPY . .
-
 # Generate Prisma Client
 RUN npx prisma generate
+
+# Copy application source code
+COPY . .
 
 # Build target application
 ARG APP_NAME
@@ -23,7 +23,7 @@ RUN npx nest build ${APP_NAME}
 RUN npm prune --omit=dev
 
 # Stage 2: Production runner image
-FROM node:20-alpine AS runner
+FROM node:22-alpine AS runner
 
 WORKDIR /usr/src/app
 
