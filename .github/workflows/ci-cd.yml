@@ -103,3 +103,26 @@ jobs:
           tags: telecrypt-telegram-bot:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  deploy:
+    needs: docker-build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+
+    steps:
+      - name: Deploy to Server via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT || '22' }}
+          script: |
+            cd ${{ secrets.DEPLOY_PATH }}
+            git pull origin ${{ github.ref_name }}
+            npm install
+            export $(grep -v '^#' .env | xargs)
+            npx prisma db push
+            npx prisma generate
+            docker compose down || docker-compose down
+            docker compose up -d --build || docker-compose up -d --build
