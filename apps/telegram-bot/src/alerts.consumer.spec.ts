@@ -24,12 +24,17 @@ describe('AlertsConsumer', () => {
     },
   };
 
+  const mockAlertsCounter = {
+    inc: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AlertsConsumer,
         { provide: TelegramBotService, useValue: mockTelegramBotService },
         { provide: DatabaseService, useValue: mockDatabaseService },
+        { provide: 'PROM_METRIC_TELECRYPT_ALERTS_SENT_TOTAL', useValue: mockAlertsCounter },
       ],
     }).compile();
 

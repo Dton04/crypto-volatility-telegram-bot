@@ -17,6 +17,14 @@ describe('BinanceWorkerService', () => {
     add: jest.fn(),
   };
 
+  const mockTicksCounter = {
+    inc: jest.fn(),
+  };
+
+  const mockTrackedSymbolsGauge = {
+    set: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -24,6 +32,8 @@ describe('BinanceWorkerService', () => {
         { provide: DatabaseService, useValue: mockDatabaseService },
         { provide: getQueueToken('telegram-alerts'), useValue: mockQueue },
         { provide: KlineScannerService, useValue: {} },
+        { provide: 'PROM_METRIC_BINANCE_WEBSOCKET_TICKS_TOTAL', useValue: mockTicksCounter },
+        { provide: 'PROM_METRIC_TELECRYPT_TRACKED_SYMBOLS', useValue: mockTrackedSymbolsGauge },
       ],
     }).compile();
 
