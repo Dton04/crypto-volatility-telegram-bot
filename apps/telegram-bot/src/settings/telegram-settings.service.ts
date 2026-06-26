@@ -10,7 +10,7 @@ export class TelegramSettingsService {
   constructor(
     private readonly databaseService: DatabaseService,
     private readonly userService: UserService,
-  ) {}
+  ) { }
 
   async handleSettingsCommand(ctx: Context) {
     try {
@@ -388,7 +388,7 @@ export class TelegramSettingsService {
               'target_toggle_200',
             ),
             Markup.button.callback(
-              isNone ? '✅ None (Candle Only)' : '⬜️ None (Candle Only)',
+              isNone ? '✅ None (Candle Only)' : '⬜️ Nonee (Candle Only)',
               'target_toggle_none',
             ),
           ],
