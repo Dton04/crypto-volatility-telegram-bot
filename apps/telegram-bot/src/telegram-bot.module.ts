@@ -2,6 +2,10 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { BullModule } from '@nestjs/bullmq';
 import { DatabaseModule } from 'app/database';
+import {
+  PrometheusModule,
+  makeCounterProvider,
+} from '@willsoto/nestjs-prometheus';
 import { TelegramBotController } from './telegram-bot.controller';
 import { TelegramBotService } from './telegram-bot.service';
 import { AlertsConsumer } from './alerts/alerts.consumer';
@@ -15,6 +19,12 @@ import { TelegramTestService } from './test-command/telegram-test.service';
       isGlobal: true,
     }),
     DatabaseModule,
+    PrometheusModule.register({
+      path: '/metrics',
+      defaultMetrics: {
+        enabled: true,
+      },
+    }),
     BullModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => {
@@ -45,6 +55,11 @@ import { TelegramTestService } from './test-command/telegram-test.service';
     UserService,
     TelegramSettingsService,
     TelegramTestService,
+    makeCounterProvider({
+      name: 'telecrypt_alerts_sent_total',
+      help: 'Total number of alerts processed and sent by the Telegram Bot',
+      labelNames: ['symbol', 'alert_type', 'status'],
+    }),
   ],
 })
 export class TelegramBotModule {}

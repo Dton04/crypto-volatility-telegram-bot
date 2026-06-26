@@ -10,7 +10,7 @@ export class TelegramSettingsService {
   constructor(
     private readonly databaseService: DatabaseService,
     private readonly userService: UserService,
-  ) { }
+  ) {}
 
   async handleSettingsCommand(ctx: Context) {
     try {

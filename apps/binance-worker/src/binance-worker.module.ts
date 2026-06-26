@@ -2,6 +2,11 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { BullModule } from '@nestjs/bullmq';
 import { DatabaseModule } from 'app/database';
+import {
+  PrometheusModule,
+  makeCounterProvider,
+  makeGaugeProvider,
+} from '@willsoto/nestjs-prometheus';
 import { BinanceWorkerController } from './binance-worker.controller';
 import { BinanceWorkerService } from './binance-worker.service';
 import { TechnicalIndicatorsService } from './indicators/technical-indicators.service';
@@ -13,6 +18,12 @@ import { KlineScannerService } from './scanner/kline-scanner.service';
       isGlobal: true,
     }),
     DatabaseModule,
+    PrometheusModule.register({
+      path: '/metrics',
+      defaultMetrics: {
+        enabled: true,
+      },
+    }),
     BullModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => {
@@ -41,6 +52,15 @@ import { KlineScannerService } from './scanner/kline-scanner.service';
     BinanceWorkerService,
     TechnicalIndicatorsService,
     KlineScannerService,
+    makeCounterProvider({
+      name: 'binance_websocket_ticks_total',
+      help: 'Total number of websocket ticks processed by TeleCryp scanner',
+      labelNames: ['symbol'],
+    }),
+    makeGaugeProvider({
+      name: 'telecrypt_tracked_symbols',
+      help: 'Total number of active symbols tracked in memory',
+    }),
   ],
 })
 export class BinanceWorkerModule {}

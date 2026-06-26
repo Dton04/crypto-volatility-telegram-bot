@@ -4,6 +4,8 @@ import {
   OnModuleDestroy,
   Logger,
 } from '@nestjs/common';
+import { InjectMetric } from '@willsoto/nestjs-prometheus';
+import { Counter, Gauge } from 'prom-client';
 import { webSocket } from 'rxjs/webSocket';
 import { Subscription, timer } from 'rxjs';
 import { bufferTime, filter, map, retry } from 'rxjs/operators';
@@ -53,6 +55,10 @@ export class BinanceWorkerService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly databaseService: DatabaseService,
     private readonly klineScannerService: KlineScannerService,
+    @InjectMetric('binance_websocket_ticks_total')
+    private readonly ticksCounter: Counter<string>,
+    @InjectMetric('telecrypt_tracked_symbols')
+    private readonly trackedSymbolsGauge: Gauge<string>,
   ) {}
 
   async onModuleInit() {
@@ -196,6 +202,9 @@ export class BinanceWorkerService implements OnModuleInit, OnModuleDestroy {
     // Clean expired cooldowns periodically (hourly)
     this.cleanExpiredCooldowns(now);
 
+    // Update Prometheus metrics
+    this.trackedSymbolsGauge.set(this.priceVolumeTracker.size);
+
     // Run independent EMA scan when a new hour closes
     if (this.lastScannedHour === -1) {
       this.lastScannedHour = currentHour;
@@ -211,6 +220,7 @@ export class BinanceWorkerService implements OnModuleInit, OnModuleDestroy {
     }
 
     for (const [symbol, tick] of ticks.entries()) {
+      this.ticksCounter.inc({ symbol });
       const price = parseFloat(tick.c);
       const cumulativeVolume = parseFloat(tick.q); // Quote asset volume in USDT
 

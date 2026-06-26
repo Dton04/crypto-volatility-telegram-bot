@@ -1,6 +1,8 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Job } from 'bullmq';
 import { Logger } from '@nestjs/common';
+import { InjectMetric } from '@willsoto/nestjs-prometheus';
+import { Counter } from 'prom-client';
 import { TelegramBotService } from '../telegram-bot.service';
 import { DatabaseService } from 'app/database';
 import { AlertType, Timeframe } from '@prisma/client';
@@ -65,6 +67,8 @@ export class AlertsConsumer extends WorkerHost {
   constructor(
     private readonly telegramBotService: TelegramBotService,
     private readonly databaseService: DatabaseService,
+    @InjectMetric('telecrypt_alerts_sent_total')
+    private readonly alertsCounter: Counter<string>,
   ) {
     super();
   }
@@ -455,10 +459,22 @@ export class AlertsConsumer extends WorkerHost {
         },
       });
 
+      this.alertsCounter.inc({
+        symbol,
+        alert_type: alertType,
+        status: 'success',
+      });
+
       this.logger.log(
         `Successfully sent alert to user ${userId} for ${symbol}`,
       );
     } catch (error: unknown) {
+      this.alertsCounter.inc({
+        symbol,
+        alert_type: alertType,
+        status: 'failed',
+      });
+
       this.logger.error(`Failed to send alert to user ${userId}:`, error);
 
       // Handle user blocking the bot
