@@ -40,6 +40,10 @@ export class BinanceWorkerService implements OnModuleInit, OnModuleDestroy {
   private activeUserConfigs: UserConfigCache[] = [];
   private configRefreshTimer?: NodeJS.Timeout;
 
+  // Heartbeat tracking for WebSocket connection
+  private lastReceivedTime = Date.now();
+  private heartbeatInterval?: NodeJS.Timeout;
+
   // Track last hour where independent EMA scans were run
   private lastScannedHour = -1;
 
@@ -60,6 +64,12 @@ export class BinanceWorkerService implements OnModuleInit, OnModuleDestroy {
       void this.refreshUserConfigs();
     }, 60000);
 
+    // Initialize lastReceivedTime and start WebSocket heartbeat checking
+    this.lastReceivedTime = Date.now();
+    this.heartbeatInterval = setInterval(() => {
+      this.checkWebSocketHeartbeat();
+    }, 30000); // Check every 30 seconds
+
     // Connect to WebSocket stream
     this.connectToBinanceWebSocket();
   }
@@ -70,6 +80,9 @@ export class BinanceWorkerService implements OnModuleInit, OnModuleDestroy {
     }
     if (this.configRefreshTimer) {
       clearInterval(this.configRefreshTimer);
+    }
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
     }
   }
 
@@ -146,6 +159,7 @@ export class BinanceWorkerService implements OnModuleInit, OnModuleDestroy {
       )
       .subscribe({
         next: (latestTicks) => {
+          this.lastReceivedTime = Date.now();
           void this.processTicks(latestTicks);
         },
         error: (err) => {
@@ -265,5 +279,36 @@ export class BinanceWorkerService implements OnModuleInit, OnModuleDestroy {
         this.alertCooldowns.delete(key);
       }
     }
+  }
+
+  /**
+   * Checks if WebSocket has received ticks in the last 60 seconds
+   */
+  private checkWebSocketHeartbeat() {
+    const now = Date.now();
+    const idleTime = now - this.lastReceivedTime;
+    if (idleTime > 60000) {
+      this.logger.warn(
+        `No messages received from Binance WebSocket for ${idleTime}ms. Forcing reconnect...`,
+      );
+      // Reset lastReceivedTime to now to prevent triggering reconnect repeatedly while connecting
+      this.lastReceivedTime = now;
+      this.reconnectWebSocket();
+    }
+  }
+
+  /**
+   * Unsubscribes from active subscription and connects again
+   */
+  private reconnectWebSocket() {
+    if (this.wsSubscription) {
+      try {
+        this.wsSubscription.unsubscribe();
+      } catch (err) {
+        this.logger.error('Error unsubscribing from Binance WS:', err);
+      }
+      this.wsSubscription = undefined;
+    }
+    this.connectToBinanceWebSocket();
   }
 }
